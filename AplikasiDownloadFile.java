@@ -1,95 +1,232 @@
-import javax.swing.*;
-import javax.swing.table.DefaultTableModel;
 import java.awt.*;
+import java.awt.datatransfer.*;
 import java.awt.event.*;
-import java.io.*;
+import java.io.*; // Untuk fitur Paste (Tempel)
 import java.net.*;
 import java.util.zip.*;
-import java.awt.Desktop;
+import javax.swing.*;
+import javax.swing.table.*;
 
 public class AplikasiDownloadFile extends JFrame {
 
     private JTextField txtUrl;
-    private JButton btnDownload;
+    private JButton btnDownload, btnTempel, btnBukaFile, btnBukaFolder, btnHapus;
     private JProgressBar progressBar;
     private JLabel lblStatus;
     
     private JTable tableHistory;
     private DefaultTableModel tableModel;
+    
+    // Label untuk Status Bar di bagian bawah
+    private JLabel lblStatusKiri, lblStatusTengah, lblStatusKanan;
 
     public AplikasiDownloadFile() {
         setTitle("Aplikasi Download File");
-        setSize(700, 450); 
+        setSize(850, 500); // Ukuran disesuaikan agar pas dengan banyak tombol
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setLayout(new BorderLayout(15, 15));
+        setLayout(new BorderLayout(10, 10));
         setLocationRelativeTo(null);
 
         Font fontUtama = new Font("Segoe UI", Font.PLAIN, 14);
+        Font fontBold = new Font("Segoe UI", Font.BOLD, 14);
 
-        JPanel panelAtas = new JPanel(new BorderLayout(10, 10));
+        // ==========================================
+        // 1. BAGIAN ATAS (Input URL & Tempel)
+        // ==========================================
+        JPanel panelInput = new JPanel(new BorderLayout(10, 10));
         JLabel lblUrl = new JLabel("Masukkan URL:");
-        lblUrl.setFont(fontUtama);
+        lblUrl.setFont(fontBold);
         txtUrl = new JTextField();
         txtUrl.setFont(fontUtama);
-        panelAtas.add(lblUrl, BorderLayout.WEST);
-        panelAtas.add(txtUrl, BorderLayout.CENTER);
+        txtUrl.setMargin(new Insets(5, 5, 5, 5));
+        
+        btnTempel = new JButton("Tempel");
+        btnTempel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        btnTempel.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        
+        // Aksi Tombol Tempel (Paste dari Clipboard)
+        btnTempel.addActionListener(e -> {
+            try {
+                Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+                Transferable contents = clipboard.getContents(null);
+                if (contents != null && contents.isDataFlavorSupported(DataFlavor.stringFlavor)) {
+                    String pasteString = (String) contents.getTransferData(DataFlavor.stringFlavor);
+                    txtUrl.setText(pasteString);
+                }
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(this, "Gagal menempelkan teks!", "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        });
 
-        JPanel panelProgress = new JPanel(new GridLayout(2, 1, 5, 5));
+        panelInput.add(lblUrl, BorderLayout.WEST);
+        panelInput.add(txtUrl, BorderLayout.CENTER);
+        panelInput.add(btnTempel, BorderLayout.EAST);
+
+        // ==========================================
+        // 2. BAGIAN PROGRESS BAR
+        // ==========================================
+        JPanel panelProgress = new JPanel(new BorderLayout(5, 5));
         progressBar = new JProgressBar(0, 100);
         progressBar.setStringPainted(true);
-        progressBar.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        progressBar.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        progressBar.setForeground(new Color(0, 120, 215)); // Warna Biru khas Windows
+        progressBar.setBackground(Color.WHITE);
+        progressBar.setPreferredSize(new Dimension(100, 30)); // Mempertebal Progress Bar
 
         lblStatus = new JLabel("Status: Menunggu input URL...", SwingConstants.CENTER);
-        lblStatus.setFont(new Font("Segoe UI", Font.ITALIC, 12));
-        lblStatus.setForeground(Color.GRAY);
+        lblStatus.setFont(new Font("Segoe UI", Font.ITALIC, 14));
+        lblStatus.setForeground(new Color(39, 174, 96)); // Hijau
         
-        panelProgress.add(progressBar);
-        panelProgress.add(lblStatus);
+        panelProgress.add(progressBar, BorderLayout.CENTER);
+        panelProgress.add(lblStatus, BorderLayout.SOUTH);
 
-        JPanel panelKontrol = new JPanel(new BorderLayout(10, 10));
-        panelKontrol.add(panelAtas, BorderLayout.NORTH);
-        panelKontrol.add(panelProgress, BorderLayout.SOUTH);
+        // Menggabungkan Input dan Progress
+        JPanel panelAtas = new JPanel(new BorderLayout(10, 15));
+        panelAtas.add(panelInput, BorderLayout.NORTH);
+        panelAtas.add(panelProgress, BorderLayout.CENTER);
 
+        // ==========================================
+        // 3. BAGIAN TENGAH (Tabel Riwayat)
+        // ==========================================
         String[] namaKolom = {"URL", "Nama File", "Ukuran", "Jenis File", "Status"};
         tableModel = new DefaultTableModel(namaKolom, 0) {
             @Override
-            public boolean isCellEditable(int row, int column) {
-                return false; 
-            }
+            public boolean isCellEditable(int row, int column) { return false; }
         };
         tableHistory = new JTable(tableModel);
-        tableHistory.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        tableHistory.setRowHeight(25); 
-        JScrollPane scrollPane = new JScrollPane(tableHistory); 
+        tableHistory.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        tableHistory.setRowHeight(25);
+        tableHistory.setSelectionBackground(new Color(0, 120, 215));
+        tableHistory.setSelectionForeground(Color.WHITE);
+        tableHistory.setShowVerticalLines(false); // Menghilangkan garis vertikal
+        
+        // Custom Renderer agar tulisan "Berhasil" berwarna Hijau
+        DefaultTableCellRenderer statusRenderer = new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
+                Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+                if (!isSelected) {
+                    if ("Berhasil".equals(value)) {
+                        c.setForeground(new Color(39, 174, 96)); // Hijau
+                    } else if ("Gagal".equals(value)) {
+                        c.setForeground(Color.RED);
+                    } else {
+                        c.setForeground(Color.BLACK);
+                    }
+                }
+                return c;
+            }
+        };
+        tableHistory.getColumnModel().getColumn(4).setCellRenderer(statusRenderer);
 
+        JScrollPane scrollPane = new JScrollPane(tableHistory);
+        scrollPane.getViewport().setBackground(Color.WHITE);
+
+        // Jika baris diklik, URL otomatis pindah ke atas
         tableHistory.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
-                int barisTerpilih = tableHistory.getSelectedRow();
-                if (barisTerpilih != -1) {
-                    String urlDariHistory = tableModel.getValueAt(barisTerpilih, 0).toString();
-                    txtUrl.setText(urlDariHistory);
+                int baris = tableHistory.getSelectedRow();
+                if (baris != -1) {
+                    txtUrl.setText(tableModel.getValueAt(baris, 0).toString());
                 }
             }
         });
 
+        // ==========================================
+        // 4. BAGIAN BAWAH (Tombol Aksi)
+        // ==========================================
+        JPanel panelAksi = new JPanel(new BorderLayout(10, 10));
+        
         btnDownload = new JButton("Mulai Download");
-        btnDownload.setFont(new Font("Segoe UI", Font.BOLD, 14));
-        btnDownload.setBackground(new Color(41, 128, 185)); 
-        btnDownload.setForeground(Color.BLACK); 
-        btnDownload.setFocusPainted(false); 
-        btnDownload.setCursor(new Cursor(Cursor.HAND_CURSOR)); 
+        btnDownload.setFont(fontBold);
+        btnDownload.setBackground(Color.WHITE);
+        btnDownload.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        btnDownload.setPreferredSize(new Dimension(400, 35));
+        btnDownload.addActionListener(e -> mulaiDownload());
 
-        btnDownload.addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                mulaiDownload();
+        JPanel panelTombolKanan = new JPanel(new GridLayout(1, 3, 5, 0));
+        btnBukaFile = new JButton("Buka File");
+        btnBukaFolder = new JButton("Buka Folder");
+        btnHapus = new JButton("Hapus");
+        
+        btnBukaFile.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        btnBukaFolder.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        btnHapus.setCursor(new Cursor(Cursor.HAND_CURSOR));
+
+        panelTombolKanan.add(btnBukaFile);
+        panelTombolKanan.add(btnBukaFolder);
+        panelTombolKanan.add(btnHapus);
+
+        panelAksi.add(btnDownload, BorderLayout.CENTER);
+        panelAksi.add(panelTombolKanan, BorderLayout.EAST);
+
+        // Aksi Tombol-tombol Baru
+        btnBukaFolder.addActionListener(e -> {
+            try {
+                // Membuka folder tempat program ini berjalan (tempat file disimpan)
+                Desktop.getDesktop().open(new File(System.getProperty("user.dir")));
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(this, "Gagal membuka folder!", "Error", JOptionPane.ERROR_MESSAGE);
             }
         });
 
-        add(panelKontrol, BorderLayout.NORTH);
+        btnBukaFile.addActionListener(e -> {
+            int baris = tableHistory.getSelectedRow();
+            if (baris == -1) {
+                JOptionPane.showMessageDialog(this, "Pilih file di tabel terlebih dahulu!", "Info", JOptionPane.INFORMATION_MESSAGE);
+                return;
+            }
+            try {
+                String namaFile = tableModel.getValueAt(baris, 1).toString();
+                Desktop.getDesktop().open(new File(namaFile));
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(this, "File tidak ditemukan atau gagal dibuka!", "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        });
+
+        btnHapus.addActionListener(e -> {
+            int baris = tableHistory.getSelectedRow();
+            if (baris != -1) {
+                tableModel.removeRow(baris);
+                updateStatusBar();
+            } else {
+                JOptionPane.showMessageDialog(this, "Pilih riwayat yang ingin dihapus!", "Info", JOptionPane.INFORMATION_MESSAGE);
+            }
+        });
+
+        // ==========================================
+        // 5. STATUS BAR PALING BAWAH
+        // ==========================================
+        JPanel statusBar = new JPanel(new BorderLayout());
+        statusBar.setBorder(BorderFactory.createEmptyBorder(5, 0, 0, 0));
+        
+        lblStatusKiri = new JLabel("Siap");
+        lblStatusKiri.setForeground(Color.GRAY);
+        
+        JPanel statusKanan = new JPanel(new FlowLayout(FlowLayout.RIGHT, 15, 0));
+        lblStatusTengah = new JLabel("Koneksi: Terhubung");
+        lblStatusTengah.setForeground(Color.GRAY);
+        lblStatusKanan = new JLabel("Total: 0 Unduhan");
+        lblStatusKanan.setForeground(Color.GRAY);
+        
+        statusKanan.add(lblStatusTengah);
+        statusKanan.add(lblStatusKanan);
+        
+        statusBar.add(lblStatusKiri, BorderLayout.WEST);
+        statusBar.add(statusKanan, BorderLayout.EAST);
+
+        // Gabungkan Aksi dan Status Bar
+        JPanel panelBawah = new JPanel(new BorderLayout(0, 10));
+        panelBawah.add(panelAksi, BorderLayout.CENTER);
+        panelBawah.add(statusBar, BorderLayout.SOUTH);
+
+        // ==========================================
+        // PENYUSUNAN LAYOUT AKHIR
+        // ==========================================
+        add(panelAtas, BorderLayout.NORTH);
         add(scrollPane, BorderLayout.CENTER); 
-        add(btnDownload, BorderLayout.SOUTH);
+        add(panelBawah, BorderLayout.SOUTH);
         
         getRootPane().setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
     }
@@ -103,25 +240,20 @@ public class AplikasiDownloadFile extends JFrame {
 
         btnDownload.setEnabled(false);
         btnDownload.setText("Sedang Mendownload...");
-        btnDownload.setBackground(Color.GRAY);
         progressBar.setValue(0);
         progressBar.setString("Menghubungkan...");
         lblStatus.setText("Status: Menghubungkan ke server...");
-        lblStatus.setForeground(Color.BLUE);
+        lblStatus.setForeground(new Color(0, 120, 215)); // Biru
 
-        Thread downloadThread = new Thread(new Runnable() {
-            @Override
-            public void run() {
-                prosesDownloadDanEkstrak(urlString);
-            }
-        });
+        Thread downloadThread = new Thread(() -> prosesDownloadDanEkstrak(urlString));
         downloadThread.start();
     }
 
     private void prosesDownloadDanEkstrak(String urlString) {
         String namaFileUntukHistory = "-";
         String ukuranUntukHistory = "Tidak diketahui";
-        String jenisUntukHistory = "Tidak diketahui";
+        String jenisUntukHistory = "Unknown";
+
         try {
             URL url = new URI(urlString).toURL();
             HttpURLConnection koneksi = (HttpURLConnection) url.openConnection();
@@ -177,20 +309,14 @@ public class AplikasiDownloadFile extends JFrame {
 
             SwingUtilities.invokeLater(() -> {
                 lblStatus.setText("Status: Selesai!");
-                lblStatus.setForeground(new Color(39, 174, 96)); 
+                lblStatus.setForeground(new Color(39, 174, 96)); // Hijau
                 kembalikanTombolSemula();
-                JOptionPane.showMessageDialog(AplikasiDownloadFile.this, "Download Selesai!\nFile tersimpan sebagai: " + namaFile, "Sukses", JOptionPane.INFORMATION_MESSAGE);
             });
 
             if (namaFile.toLowerCase().endsWith(".zip")) {
-                int pilihan = JOptionPane.showConfirmDialog(
-                        AplikasiDownloadFile.this,
+                int pilihan = JOptionPane.showConfirmDialog(this,
                         "File yang didownload berformat ZIP.\nApakah kamu ingin mengekstraknya sekarang?",
-                        "Ekstrak File ZIP",
-                        JOptionPane.YES_NO_OPTION,
-                        JOptionPane.QUESTION_MESSAGE
-                );
-
+                        "Ekstrak File ZIP", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
                 if (pilihan == JOptionPane.YES_OPTION) {
                     ekstrakZip(namaFile);
                 }
@@ -204,7 +330,7 @@ public class AplikasiDownloadFile extends JFrame {
                 lblStatus.setForeground(Color.RED);
                 progressBar.setString("Error!");
                 kembalikanTombolSemula();
-                JOptionPane.showMessageDialog(AplikasiDownloadFile.this, "Gagal mendownload file: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Gagal mendownload: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
             });
         }
     }
@@ -212,13 +338,18 @@ public class AplikasiDownloadFile extends JFrame {
     private void tambahKeHistory(String url, String namaFile, String ukuran, String jenis, String status) {
         SwingUtilities.invokeLater(() -> {
             tableModel.addRow(new Object[]{url, namaFile, ukuran, jenis, status});
+            updateStatusBar(); // Memperbarui jumlah total unduhan di Status Bar
         });
+    }
+    
+    // Fungsi untuk memperbarui teks di Status Bar bawah
+    private void updateStatusBar() {
+        lblStatusKanan.setText("Total: " + tableModel.getRowCount() + " Unduhan");
     }
 
     private void kembalikanTombolSemula() {
         btnDownload.setEnabled(true);
         btnDownload.setText("Mulai Download");
-        btnDownload.setBackground(new Color(41, 128, 185)); 
     }
 
     private void ekstrakZip(String namaFileZip) {
@@ -232,7 +363,6 @@ public class AplikasiDownloadFile extends JFrame {
             ZipEntry zipEntry = zis.getNextEntry();
             while (zipEntry != null) {
                 File fileBaru = new File(folderTarget, zipEntry.getName());
-
                 if (zipEntry.isDirectory()) {
                     fileBaru.mkdirs();
                 } else {
@@ -248,14 +378,13 @@ public class AplikasiDownloadFile extends JFrame {
                 zipEntry = zis.getNextEntry();
             }
             zis.closeEntry();
-            JOptionPane.showMessageDialog(this, "Ekstraksi berhasil ke folder: " + namaFolderTarget, "Info Ekstrak", JOptionPane.INFORMATION_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Ekstraksi berhasil ke folder: " + namaFolderTarget, "Info", JOptionPane.INFORMATION_MESSAGE);
             
             if (Desktop.isDesktopSupported()) {
                 Desktop.getDesktop().open(folderTarget);
             }
-
         } catch (IOException e) {
-            JOptionPane.showMessageDialog(this, "Gagal mengekstrak: " + e.getMessage(), "Error Ekstrak", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Gagal mengekstrak: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
         }
     }
 
@@ -266,10 +395,6 @@ public class AplikasiDownloadFile extends JFrame {
             e.printStackTrace();
         }
 
-        SwingUtilities.invokeLater(new Runnable() {
-            public void run() {
-                new AplikasiDownloadFile().setVisible(true);
-            }
-        });
+        SwingUtilities.invokeLater(() -> new AplikasiDownloadFile().setVisible(true));
     }
 }
