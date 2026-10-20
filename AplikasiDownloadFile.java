@@ -20,7 +20,7 @@ public class AplikasiDownloadFile extends JFrame {
     private JLabel lblStatusKiri, lblStatusTengah, lblStatusKanan;
 
     public AplikasiDownloadFile() {
-        setTitle("Aplikasi Download File");
+        setTitle("VelocityFetch - Advanced Download Manager");
         setSize(850, 500);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLayout(new BorderLayout(10, 10));
@@ -94,7 +94,7 @@ public class AplikasiDownloadFile extends JFrame {
                 Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
                 if (!isSelected) {
                     if ("Berhasil".equals(value)) {
-                        c.setForeground(new Color(39, 174, 96)); // Hijau
+                        c.setForeground(new Color(39, 174, 96));
                     } else if ("Gagal".equals(value)) {
                         c.setForeground(Color.RED);
                     } else {
