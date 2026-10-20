@@ -1,7 +1,7 @@
 import java.awt.*;
 import java.awt.datatransfer.*;
 import java.awt.event.*;
-import java.io.*; // Untuk fitur Paste (Tempel)
+import java.io.*;
 import java.net.*;
 import java.util.zip.*;
 import javax.swing.*;
@@ -17,12 +17,11 @@ public class AplikasiDownloadFile extends JFrame {
     private JTable tableHistory;
     private DefaultTableModel tableModel;
     
-    // Label untuk Status Bar di bagian bawah
     private JLabel lblStatusKiri, lblStatusTengah, lblStatusKanan;
 
     public AplikasiDownloadFile() {
         setTitle("Aplikasi Download File");
-        setSize(850, 500); // Ukuran disesuaikan agar pas dengan banyak tombol
+        setSize(850, 500);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLayout(new BorderLayout(10, 10));
         setLocationRelativeTo(null);
@@ -30,9 +29,6 @@ public class AplikasiDownloadFile extends JFrame {
         Font fontUtama = new Font("Segoe UI", Font.PLAIN, 14);
         Font fontBold = new Font("Segoe UI", Font.BOLD, 14);
 
-        // ==========================================
-        // 1. BAGIAN ATAS (Input URL & Tempel)
-        // ==========================================
         JPanel panelInput = new JPanel(new BorderLayout(10, 10));
         JLabel lblUrl = new JLabel("Masukkan URL:");
         lblUrl.setFont(fontBold);
@@ -44,7 +40,6 @@ public class AplikasiDownloadFile extends JFrame {
         btnTempel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
         btnTempel.setCursor(new Cursor(Cursor.HAND_CURSOR));
         
-        // Aksi Tombol Tempel (Paste dari Clipboard)
         btnTempel.addActionListener(e -> {
             try {
                 Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
@@ -62,32 +57,25 @@ public class AplikasiDownloadFile extends JFrame {
         panelInput.add(txtUrl, BorderLayout.CENTER);
         panelInput.add(btnTempel, BorderLayout.EAST);
 
-        // ==========================================
-        // 2. BAGIAN PROGRESS BAR
-        // ==========================================
         JPanel panelProgress = new JPanel(new BorderLayout(5, 5));
         progressBar = new JProgressBar(0, 100);
         progressBar.setStringPainted(true);
         progressBar.setFont(new Font("Segoe UI", Font.BOLD, 14));
-        progressBar.setForeground(new Color(0, 120, 215)); // Warna Biru khas Windows
+        progressBar.setForeground(new Color(0, 120, 215));
         progressBar.setBackground(Color.WHITE);
-        progressBar.setPreferredSize(new Dimension(100, 30)); // Mempertebal Progress Bar
+        progressBar.setPreferredSize(new Dimension(100, 30));
 
         lblStatus = new JLabel("Status: Menunggu input URL...", SwingConstants.CENTER);
         lblStatus.setFont(new Font("Segoe UI", Font.ITALIC, 14));
-        lblStatus.setForeground(new Color(39, 174, 96)); // Hijau
+        lblStatus.setForeground(new Color(39, 174, 96));
         
         panelProgress.add(progressBar, BorderLayout.CENTER);
         panelProgress.add(lblStatus, BorderLayout.SOUTH);
 
-        // Menggabungkan Input dan Progress
         JPanel panelAtas = new JPanel(new BorderLayout(10, 15));
         panelAtas.add(panelInput, BorderLayout.NORTH);
         panelAtas.add(panelProgress, BorderLayout.CENTER);
 
-        // ==========================================
-        // 3. BAGIAN TENGAH (Tabel Riwayat)
-        // ==========================================
         String[] namaKolom = {"URL", "Nama File", "Ukuran", "Jenis File", "Status"};
         tableModel = new DefaultTableModel(namaKolom, 0) {
             @Override
@@ -98,9 +86,8 @@ public class AplikasiDownloadFile extends JFrame {
         tableHistory.setRowHeight(25);
         tableHistory.setSelectionBackground(new Color(0, 120, 215));
         tableHistory.setSelectionForeground(Color.WHITE);
-        tableHistory.setShowVerticalLines(false); // Menghilangkan garis vertikal
-        
-        // Custom Renderer agar tulisan "Berhasil" berwarna Hijau
+        tableHistory.setShowVerticalLines(false); 
+
         DefaultTableCellRenderer statusRenderer = new DefaultTableCellRenderer() {
             @Override
             public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
@@ -122,7 +109,6 @@ public class AplikasiDownloadFile extends JFrame {
         JScrollPane scrollPane = new JScrollPane(tableHistory);
         scrollPane.getViewport().setBackground(Color.WHITE);
 
-        // Jika baris diklik, URL otomatis pindah ke atas
         tableHistory.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
@@ -133,9 +119,6 @@ public class AplikasiDownloadFile extends JFrame {
             }
         });
 
-        // ==========================================
-        // 4. BAGIAN BAWAH (Tombol Aksi)
-        // ==========================================
         JPanel panelAksi = new JPanel(new BorderLayout(10, 10));
         
         btnDownload = new JButton("Mulai Download");
@@ -161,10 +144,8 @@ public class AplikasiDownloadFile extends JFrame {
         panelAksi.add(btnDownload, BorderLayout.CENTER);
         panelAksi.add(panelTombolKanan, BorderLayout.EAST);
 
-        // Aksi Tombol-tombol Baru
         btnBukaFolder.addActionListener(e -> {
             try {
-                // Membuka folder tempat program ini berjalan (tempat file disimpan)
                 Desktop.getDesktop().open(new File(System.getProperty("user.dir")));
             } catch (Exception ex) {
                 JOptionPane.showMessageDialog(this, "Gagal membuka folder!", "Error", JOptionPane.ERROR_MESSAGE);
@@ -195,9 +176,6 @@ public class AplikasiDownloadFile extends JFrame {
             }
         });
 
-        // ==========================================
-        // 5. STATUS BAR PALING BAWAH
-        // ==========================================
         JPanel statusBar = new JPanel(new BorderLayout());
         statusBar.setBorder(BorderFactory.createEmptyBorder(5, 0, 0, 0));
         
@@ -216,14 +194,10 @@ public class AplikasiDownloadFile extends JFrame {
         statusBar.add(lblStatusKiri, BorderLayout.WEST);
         statusBar.add(statusKanan, BorderLayout.EAST);
 
-        // Gabungkan Aksi dan Status Bar
         JPanel panelBawah = new JPanel(new BorderLayout(0, 10));
         panelBawah.add(panelAksi, BorderLayout.CENTER);
         panelBawah.add(statusBar, BorderLayout.SOUTH);
 
-        // ==========================================
-        // PENYUSUNAN LAYOUT AKHIR
-        // ==========================================
         add(panelAtas, BorderLayout.NORTH);
         add(scrollPane, BorderLayout.CENTER); 
         add(panelBawah, BorderLayout.SOUTH);
@@ -243,7 +217,7 @@ public class AplikasiDownloadFile extends JFrame {
         progressBar.setValue(0);
         progressBar.setString("Menghubungkan...");
         lblStatus.setText("Status: Menghubungkan ke server...");
-        lblStatus.setForeground(new Color(0, 120, 215)); // Biru
+        lblStatus.setForeground(new Color(0, 120, 215));
 
         Thread downloadThread = new Thread(() -> prosesDownloadDanEkstrak(urlString));
         downloadThread.start();
@@ -309,7 +283,7 @@ public class AplikasiDownloadFile extends JFrame {
 
             SwingUtilities.invokeLater(() -> {
                 lblStatus.setText("Status: Selesai!");
-                lblStatus.setForeground(new Color(39, 174, 96)); // Hijau
+                lblStatus.setForeground(new Color(39, 174, 96));
                 kembalikanTombolSemula();
             });
 
@@ -338,11 +312,10 @@ public class AplikasiDownloadFile extends JFrame {
     private void tambahKeHistory(String url, String namaFile, String ukuran, String jenis, String status) {
         SwingUtilities.invokeLater(() -> {
             tableModel.addRow(new Object[]{url, namaFile, ukuran, jenis, status});
-            updateStatusBar(); // Memperbarui jumlah total unduhan di Status Bar
+            updateStatusBar();
         });
     }
     
-    // Fungsi untuk memperbarui teks di Status Bar bawah
     private void updateStatusBar() {
         lblStatusKanan.setText("Total: " + tableModel.getRowCount() + " Unduhan");
     }
