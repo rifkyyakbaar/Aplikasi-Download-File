@@ -230,7 +230,7 @@ public class AplikasiDownloadFile extends JFrame {
 
         try {
             URL url = new URI(urlString).toURL();
-            HttpURLConnection koneksi = (HttpURLConnection) url.openConnection();
+            URLConnection koneksi = url.openConnection();
             int ukuranFileTotal = koneksi.getContentLength(); 
 
             String tempNama = urlString.substring(urlString.lastIndexOf("/") + 1);
@@ -251,15 +251,15 @@ public class AplikasiDownloadFile extends JFrame {
 
             SwingUtilities.invokeLater(() -> lblStatus.setText("Status: Mengunduh file " + namaFile + "..."));
 
-            InputStream inputStream = koneksi.getInputStream();
-            FileOutputStream outputStream = new FileOutputStream(namaFile);
+            BufferedInputStream inStream = new BufferedInputStream(koneksi.getInputStream());
+            BufferedOutputStream outStream = new BufferedOutputStream(new FileOutputStream(namaFile));
 
-            byte[] buffer = new byte[4096];
+            byte[] buffer = new byte[1024];
             int bytesRead;
             long totalBytesDiterima = 0;
 
-            while ((bytesRead = inputStream.read(buffer)) != -1) {
-                outputStream.write(buffer, 0, bytesRead);
+            while ((bytesRead = inStream.read(buffer, 0, 1024)) != -1) {
+                outStream.write(buffer, 0, bytesRead);
                 totalBytesDiterima += bytesRead;
 
                 if (ukuranFileTotal > 0) {
@@ -275,9 +275,9 @@ public class AplikasiDownloadFile extends JFrame {
                 }
             }
 
-            outputStream.close();
-            inputStream.close();
-            koneksi.disconnect();
+            outStream.flush();
+            outStream.close();
+            inStream.close();
 
             tambahKeHistory(urlString, namaFileUntukHistory, ukuranUntukHistory, jenisUntukHistory, "Berhasil");
 
@@ -340,13 +340,15 @@ public class AplikasiDownloadFile extends JFrame {
                     fileBaru.mkdirs();
                 } else {
                     new File(fileBaru.getParent()).mkdirs();
-                    FileOutputStream fos = new FileOutputStream(fileBaru);
+                    
+                    BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(fileBaru));
                     byte[] buffer = new byte[1024];
                     int len;
                     while ((len = zis.read(buffer)) > 0) {
-                        fos.write(buffer, 0, len);
+                        bos.write(buffer, 0, len);
                     }
-                    fos.close();
+                    bos.flush();
+                    bos.close();
                 }
                 zipEntry = zis.getNextEntry();
             }
