@@ -233,9 +233,11 @@ public class AplikasiDownloadFile extends JFrame {
             URLConnection koneksi = url.openConnection();
             int ukuranFileTotal = koneksi.getContentLength(); 
 
-            String tempNama = urlString.substring(urlString.lastIndexOf("/") + 1);
+            String path = url.getPath();                                   
+            String tempNama = path.substring(path.lastIndexOf('/') + 1);  
+
             if (tempNama.isEmpty() || !tempNama.contains(".")) {
-                tempNama = "downloaded_file.zip"; 
+            tempNama = "downloaded_file.bin";                          
             }
             final String namaFile = tempNama; 
             namaFileUntukHistory = namaFile; 
