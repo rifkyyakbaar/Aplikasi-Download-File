@@ -5,9 +5,23 @@ import java.io.*;
 import java.net.*;
 import java.util.zip.*;
 import javax.swing.*;
+import javax.swing.border.*;
+import javax.swing.plaf.basic.*;
 import javax.swing.table.*;
 
 public class AplikasiDownloadFile extends JFrame {
+
+    private static final Color BG        = new Color(243, 244, 246);
+    private static final Color CARD      = Color.WHITE;
+    private static final Color PRIMARY   = new Color(37, 99, 235);
+    private static final Color PRIMARY_H = new Color(29, 78, 216);
+    private static final Color ACCENT    = new Color(99, 102, 241);
+    private static final Color TEXT      = new Color(17, 24, 39);
+    private static final Color MUTED     = new Color(107, 114, 128);
+    private static final Color LINE      = new Color(229, 231, 235);
+    private static final Color ZEBRA     = new Color(249, 250, 251);
+    private static final Color TRACK     = new Color(226, 232, 240);
+    private static final Color DANGER    = new Color(220, 38, 38);
 
     private JTextField txtUrl;
     private JButton btnDownload, btnTempel, btnBukaFile, btnBukaFolder, btnHapus;
@@ -21,24 +35,59 @@ public class AplikasiDownloadFile extends JFrame {
 
     public AplikasiDownloadFile() {
         setTitle("VelocityFetch - Advanced Download Manager");
-        setSize(850, 500);
+        setSize(900, 620);
+        setMinimumSize(new Dimension(780, 520));
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setLayout(new BorderLayout(10, 10));
         setLocationRelativeTo(null);
+
+        JPanel root = new JPanel(new BorderLayout());
+        root.setBackground(BG);
+        setContentPane(root);
 
         Font fontUtama = new Font("Segoe UI", Font.PLAIN, 14);
         Font fontBold = new Font("Segoe UI", Font.BOLD, 14);
 
-        JPanel panelInput = new JPanel(new BorderLayout(10, 10));
-        JLabel lblUrl = new JLabel("Masukkan URL:");
+        JPanel header = new JPanel(new BorderLayout()) {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setPaint(new GradientPaint(0, 0, new Color(30, 64, 175), getWidth(), 0, new Color(99, 102, 241)));
+                g2.fillRect(0, 0, getWidth(), getHeight());
+                g2.dispose();
+            }
+        };
+        header.setBorder(BorderFactory.createEmptyBorder(18, 25, 18, 25));
+        JLabel lblJudul = new JLabel("VelocityFetch");
+        lblJudul.setFont(new Font("Segoe UI", Font.BOLD, 26));
+        lblJudul.setForeground(Color.WHITE);
+        JLabel lblSub = new JLabel("Advanced Download Manager");
+        lblSub.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        lblSub.setForeground(new Color(219, 234, 254));
+        JPanel boxJudul = new JPanel(new GridLayout(2, 1, 0, 2));
+        boxJudul.setOpaque(false);
+        boxJudul.add(lblJudul);
+        boxJudul.add(lblSub);
+        header.add(boxJudul, BorderLayout.WEST);
+
+        JPanel panelInput = new JPanel(new BorderLayout(10, 8));
+        panelInput.setOpaque(false);
+        JLabel lblUrl = new JLabel("Masukkan URL");
         lblUrl.setFont(fontBold);
+        lblUrl.setForeground(TEXT);
         txtUrl = new JTextField();
         txtUrl.setFont(fontUtama);
-        txtUrl.setMargin(new Insets(5, 5, 5, 5));
+        txtUrl.setForeground(TEXT);
+        txtUrl.setCaretColor(PRIMARY);
+        txtUrl.setBorder(new RoundBorder(LINE));
+        txtUrl.setPreferredSize(new Dimension(100, 42));
+        txtUrl.addFocusListener(new FocusAdapter() {
+            @Override public void focusGained(FocusEvent e) { txtUrl.setBorder(new RoundBorder(PRIMARY)); }
+            @Override public void focusLost(FocusEvent e)   { txtUrl.setBorder(new RoundBorder(LINE)); }
+        });
         
-        btnTempel = new JButton("Tempel");
-        btnTempel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-        btnTempel.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        btnTempel = new RoundedButton("Tempel", Color.WHITE, new Color(239, 246, 255), PRIMARY, PRIMARY);
+        btnTempel.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        btnTempel.setPreferredSize(new Dimension(95, 42));
         
         btnTempel.addActionListener(e -> {
             try {
@@ -53,28 +102,34 @@ public class AplikasiDownloadFile extends JFrame {
             }
         });
 
-        panelInput.add(lblUrl, BorderLayout.WEST);
+        panelInput.add(lblUrl, BorderLayout.NORTH);
         panelInput.add(txtUrl, BorderLayout.CENTER);
         panelInput.add(btnTempel, BorderLayout.EAST);
 
-        JPanel panelProgress = new JPanel(new BorderLayout(5, 5));
+        JPanel panelProgress = new JPanel(new BorderLayout(5, 8));
+        panelProgress.setOpaque(false);
         progressBar = new JProgressBar(0, 100);
         progressBar.setStringPainted(true);
-        progressBar.setFont(new Font("Segoe UI", Font.BOLD, 14));
-        progressBar.setForeground(new Color(0, 120, 215));
-        progressBar.setBackground(Color.WHITE);
-        progressBar.setPreferredSize(new Dimension(100, 30));
+        progressBar.setBorderPainted(false);
+        progressBar.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        progressBar.setPreferredSize(new Dimension(100, 28));
+        progressBar.setUI(new ModernProgressBarUI());
 
-        lblStatus = new JLabel("Status: Menunggu input URL...", SwingConstants.CENTER);
-        lblStatus.setFont(new Font("Segoe UI", Font.ITALIC, 14));
+        lblStatus = new JLabel("Status: Menunggu input URL...", SwingConstants.LEFT);
+        lblStatus.setFont(new Font("Segoe UI", Font.ITALIC, 13));
         lblStatus.setForeground(new Color(39, 174, 96));
         
         panelProgress.add(progressBar, BorderLayout.CENTER);
         panelProgress.add(lblStatus, BorderLayout.SOUTH);
 
-        JPanel panelAtas = new JPanel(new BorderLayout(10, 15));
+        JPanel panelAtas = new JPanel(new BorderLayout(10, 16));
+        panelAtas.setOpaque(false);
         panelAtas.add(panelInput, BorderLayout.NORTH);
         panelAtas.add(panelProgress, BorderLayout.CENTER);
+
+        RoundedPanel cardAtas = new RoundedPanel(new BorderLayout());
+        cardAtas.setBorder(BorderFactory.createEmptyBorder(18, 20, 16, 20));
+        cardAtas.add(panelAtas, BorderLayout.CENTER);
 
         String[] namaKolom = {"URL", "Nama File", "Ukuran", "Jenis File", "Status"};
         tableModel = new DefaultTableModel(namaKolom, 0) {
@@ -83,31 +138,81 @@ public class AplikasiDownloadFile extends JFrame {
         };
         tableHistory = new JTable(tableModel);
         tableHistory.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-        tableHistory.setRowHeight(25);
-        tableHistory.setSelectionBackground(new Color(0, 120, 215));
+        tableHistory.setRowHeight(34);
+        tableHistory.setSelectionBackground(PRIMARY);
         tableHistory.setSelectionForeground(Color.WHITE);
+        tableHistory.setShowGrid(false);
         tableHistory.setShowVerticalLines(false); 
+        tableHistory.setShowHorizontalLines(false);
+        tableHistory.setIntercellSpacing(new Dimension(0, 0));
+        tableHistory.setFillsViewportHeight(true);
+
+        JTableHeader th = tableHistory.getTableHeader();
+        th.setReorderingAllowed(false);
+        th.setPreferredSize(new Dimension(100, 38));
+        th.setDefaultRenderer(new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
+                JLabel l = (JLabel) super.getTableCellRendererComponent(table, value, false, false, row, column);
+                l.setOpaque(true);
+                l.setBackground(ZEBRA);
+                l.setForeground(MUTED);
+                l.setFont(new Font("Segoe UI", Font.BOLD, 12));
+                l.setBorder(BorderFactory.createCompoundBorder(
+                        BorderFactory.createMatteBorder(0, 0, 1, 0, LINE),
+                        BorderFactory.createEmptyBorder(0, 12, 0, 12)));
+                l.setHorizontalAlignment(column >= 2 ? SwingConstants.CENTER : SwingConstants.LEFT);
+                return l;
+            }
+        });
+
+        tableHistory.setDefaultRenderer(Object.class, new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
+                JLabel l = (JLabel) super.getTableCellRendererComponent(table, value, isSelected, false, row, column);
+                l.setBorder(BorderFactory.createEmptyBorder(0, 12, 0, 12));
+                l.setHorizontalAlignment(column >= 2 ? SwingConstants.CENTER : SwingConstants.LEFT);
+                if (!isSelected) {
+                    l.setBackground(row % 2 == 0 ? Color.WHITE : ZEBRA);
+                    l.setForeground(TEXT);
+                }
+                return l;
+            }
+        });
 
         DefaultTableCellRenderer statusRenderer = new DefaultTableCellRenderer() {
             @Override
             public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
-                Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+                JLabel l = (JLabel) super.getTableCellRendererComponent(table, value, isSelected, false, row, column);
+                l.setHorizontalAlignment(SwingConstants.CENTER);
+                l.setFont(new Font("Segoe UI", Font.BOLD, 13));
+                l.setBorder(BorderFactory.createEmptyBorder(0, 12, 0, 12));
                 if (!isSelected) {
+                    l.setBackground(row % 2 == 0 ? Color.WHITE : ZEBRA);
                     if ("Berhasil".equals(value)) {
-                        c.setForeground(new Color(39, 174, 96));
+                        l.setForeground(new Color(39, 174, 96));
                     } else if ("Gagal".equals(value)) {
-                        c.setForeground(Color.RED);
+                        l.setForeground(DANGER);
                     } else {
-                        c.setForeground(Color.BLACK);
+                        l.setForeground(TEXT);
                     }
                 }
-                return c;
+                return l;
             }
         };
         tableHistory.getColumnModel().getColumn(4).setCellRenderer(statusRenderer);
 
+        tableHistory.getColumnModel().getColumn(0).setPreferredWidth(300);
+        tableHistory.getColumnModel().getColumn(1).setPreferredWidth(170);
+        tableHistory.getColumnModel().getColumn(2).setPreferredWidth(90);
+        tableHistory.getColumnModel().getColumn(3).setPreferredWidth(80);
+        tableHistory.getColumnModel().getColumn(4).setPreferredWidth(90);
+
         JScrollPane scrollPane = new JScrollPane(tableHistory);
+        scrollPane.setBorder(BorderFactory.createLineBorder(LINE));
         scrollPane.getViewport().setBackground(Color.WHITE);
+        scrollPane.getVerticalScrollBar().setUI(new ModernScrollBarUI());
+        scrollPane.getVerticalScrollBar().setPreferredSize(new Dimension(10, 0));
 
         tableHistory.addMouseListener(new MouseAdapter() {
             @Override
@@ -119,23 +224,36 @@ public class AplikasiDownloadFile extends JFrame {
             }
         });
 
-        JPanel panelAksi = new JPanel(new BorderLayout(10, 10));
+        JLabel lblRiwayat = new JLabel("Riwayat Unduhan");
+        lblRiwayat.setFont(new Font("Segoe UI", Font.BOLD, 15));
+        lblRiwayat.setForeground(TEXT);
+        lblRiwayat.setBorder(BorderFactory.createEmptyBorder(0, 0, 10, 0));
+
+        RoundedPanel cardTabel = new RoundedPanel(new BorderLayout());
+        cardTabel.setBorder(BorderFactory.createEmptyBorder(16, 20, 18, 20));
+        cardTabel.add(lblRiwayat, BorderLayout.NORTH);
+        cardTabel.add(scrollPane, BorderLayout.CENTER);
+
+        JPanel panelTengah = new JPanel(new BorderLayout(0, 16));
+        panelTengah.setOpaque(false);
+        panelTengah.setBorder(BorderFactory.createEmptyBorder(20, 25, 10, 25));
+        panelTengah.add(cardAtas, BorderLayout.NORTH);
+        panelTengah.add(cardTabel, BorderLayout.CENTER);
+
+        JPanel panelAksi = new JPanel(new BorderLayout(12, 10));
+        panelAksi.setOpaque(false);
+        panelAksi.setBorder(BorderFactory.createEmptyBorder(6, 25, 14, 25));
         
-        btnDownload = new JButton("Mulai Download");
-        btnDownload.setFont(fontBold);
-        btnDownload.setBackground(Color.WHITE);
-        btnDownload.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        btnDownload.setPreferredSize(new Dimension(400, 35));
+        btnDownload = new RoundedButton("Mulai Download", PRIMARY, PRIMARY_H, Color.WHITE, null);
+        btnDownload.setFont(new Font("Segoe UI", Font.BOLD, 15));
+        btnDownload.setPreferredSize(new Dimension(400, 44));
         btnDownload.addActionListener(e -> mulaiDownload());
 
-        JPanel panelTombolKanan = new JPanel(new GridLayout(1, 3, 5, 0));
-        btnBukaFile = new JButton("Buka File");
-        btnBukaFolder = new JButton("Buka Folder");
-        btnHapus = new JButton("Hapus");
-        
-        btnBukaFile.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        btnBukaFolder.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        btnHapus.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        JPanel panelTombolKanan = new JPanel(new GridLayout(1, 3, 8, 0));
+        panelTombolKanan.setOpaque(false);
+        btnBukaFile = new RoundedButton("Buka File", Color.WHITE, new Color(243, 244, 246), TEXT, LINE);
+        btnBukaFolder = new RoundedButton("Buka Folder", Color.WHITE, new Color(243, 244, 246), TEXT, LINE);
+        btnHapus = new RoundedButton("Hapus", Color.WHITE, new Color(254, 242, 242), DANGER, new Color(252, 165, 165));
 
         panelTombolKanan.add(btnBukaFile);
         panelTombolKanan.add(btnBukaFolder);
@@ -177,16 +295,24 @@ public class AplikasiDownloadFile extends JFrame {
         });
 
         JPanel statusBar = new JPanel(new BorderLayout());
-        statusBar.setBorder(BorderFactory.createEmptyBorder(5, 0, 0, 0));
+        statusBar.setBackground(Color.WHITE);
+        statusBar.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(1, 0, 0, 0, LINE),
+                BorderFactory.createEmptyBorder(8, 25, 8, 25)));
         
+        Font fontStatus = new Font("Segoe UI", Font.PLAIN, 12);
         lblStatusKiri = new JLabel("Siap");
-        lblStatusKiri.setForeground(Color.GRAY);
+        lblStatusKiri.setFont(fontStatus);
+        lblStatusKiri.setForeground(MUTED);
         
-        JPanel statusKanan = new JPanel(new FlowLayout(FlowLayout.RIGHT, 15, 0));
+        JPanel statusKanan = new JPanel(new FlowLayout(FlowLayout.RIGHT, 18, 0));
+        statusKanan.setOpaque(false);
         lblStatusTengah = new JLabel("Koneksi: Terhubung");
-        lblStatusTengah.setForeground(Color.GRAY);
+        lblStatusTengah.setFont(fontStatus);
+        lblStatusTengah.setForeground(MUTED);
         lblStatusKanan = new JLabel("Total: 0 Unduhan");
-        lblStatusKanan.setForeground(Color.GRAY);
+        lblStatusKanan.setFont(fontStatus);
+        lblStatusKanan.setForeground(MUTED);
         
         statusKanan.add(lblStatusTengah);
         statusKanan.add(lblStatusKanan);
@@ -194,15 +320,14 @@ public class AplikasiDownloadFile extends JFrame {
         statusBar.add(lblStatusKiri, BorderLayout.WEST);
         statusBar.add(statusKanan, BorderLayout.EAST);
 
-        JPanel panelBawah = new JPanel(new BorderLayout(0, 10));
+        JPanel panelBawah = new JPanel(new BorderLayout(0, 0));
+        panelBawah.setOpaque(false);
         panelBawah.add(panelAksi, BorderLayout.CENTER);
         panelBawah.add(statusBar, BorderLayout.SOUTH);
 
-        add(panelAtas, BorderLayout.NORTH);
-        add(scrollPane, BorderLayout.CENTER); 
+        add(header, BorderLayout.NORTH);
+        add(panelTengah, BorderLayout.CENTER); 
         add(panelBawah, BorderLayout.SOUTH);
-        
-        getRootPane().setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
     }
 
     private void mulaiDownload() {
@@ -373,5 +498,174 @@ public class AplikasiDownloadFile extends JFrame {
         }
 
         SwingUtilities.invokeLater(() -> new AplikasiDownloadFile().setVisible(true));
+    }
+
+    // =====================================================================
+    //                    KOMPONEN GUI KUSTOM (HANYA TAMPILAN)
+    // =====================================================================
+
+    /** Tombol dengan sudut membulat + efek hover/pressed. */
+    private static class RoundedButton extends JButton {
+        private final Color bg, hover, fg, border;
+        private boolean over = false;
+
+        RoundedButton(String text, Color bg, Color hover, Color fg, Color border) {
+            super(text);
+            this.bg = bg;
+            this.hover = hover;
+            this.fg = fg;
+            this.border = border;
+            setFont(new Font("Segoe UI", Font.BOLD, 13));
+            setContentAreaFilled(false);
+            setFocusPainted(false);
+            setBorderPainted(false);
+            setOpaque(false);
+            setCursor(new Cursor(Cursor.HAND_CURSOR));
+            addMouseListener(new MouseAdapter() {
+                @Override public void mouseEntered(MouseEvent e) { over = true; repaint(); }
+                @Override public void mouseExited(MouseEvent e)  { over = false; repaint(); }
+            });
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+
+            int w = getWidth(), h = getHeight();
+            Color fill;
+            if (!isEnabled())                fill = new Color(148, 163, 184);
+            else if (getModel().isPressed()) fill = hover.darker();
+            else if (over)                   fill = hover;
+            else                             fill = bg;
+
+            g2.setColor(fill);
+            g2.fillRoundRect(0, 0, w - 1, h - 1, 12, 12);
+            if (border != null && isEnabled()) {
+                g2.setColor(border);
+                g2.drawRoundRect(0, 0, w - 1, h - 1, 12, 12);
+            }
+
+            g2.setFont(getFont());
+            FontMetrics fm = g2.getFontMetrics();
+            String t = getText();
+            int tx = (w - fm.stringWidth(t)) / 2;
+            int ty = (h - fm.getHeight()) / 2 + fm.getAscent();
+            g2.setColor(isEnabled() ? fg : Color.WHITE);
+            g2.drawString(t, tx, ty);
+            g2.dispose();
+        }
+    }
+
+    private static class RoundedPanel extends JPanel {
+        RoundedPanel(LayoutManager lm) {
+            super(lm);
+            setOpaque(false);
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setColor(CARD);
+            g2.fillRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 18, 18);
+            g2.setColor(LINE);
+            g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 18, 18);
+            g2.dispose();
+            super.paintComponent(g);
+        }
+    }
+
+    private static class RoundBorder extends AbstractBorder {
+        private final Color color;
+        RoundBorder(Color color) { this.color = color; }
+
+        @Override
+        public void paintBorder(Component c, Graphics g, int x, int y, int w, int h) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setColor(color);
+            g2.drawRoundRect(x, y, w - 1, h - 1, 10, 10);
+            g2.dispose();
+        }
+
+        @Override
+        public Insets getBorderInsets(Component c) { return new Insets(8, 12, 8, 12); }
+    }
+
+    private static class ModernProgressBarUI extends BasicProgressBarUI {
+        @Override
+        protected void paintDeterminate(Graphics g, JComponent c) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+
+            int w = c.getWidth(), h = c.getHeight();
+            g2.setColor(TRACK);
+            g2.fillRoundRect(0, 0, w, h, h, h);
+
+            int fill = (int) (w * progressBar.getPercentComplete());
+            if (fill > 0) {
+                g2.setPaint(new GradientPaint(0, 0, PRIMARY, w, 0, ACCENT));
+                g2.fillRoundRect(0, 0, Math.max(fill, h), h, h, h);
+            }
+
+            if (progressBar.isStringPainted()) {
+                String s = progressBar.getString();
+                g2.setFont(progressBar.getFont());
+                FontMetrics fm = g2.getFontMetrics();
+                int tx = (w - fm.stringWidth(s)) / 2;
+                int ty = (h - fm.getHeight()) / 2 + fm.getAscent();
+
+                g2.setClip(0, 0, fill, h);
+                g2.setColor(Color.WHITE);
+                g2.drawString(s, tx, ty);
+                g2.setClip(fill, 0, w - fill, h);
+                g2.setColor(TEXT);
+                g2.drawString(s, tx, ty);
+            }
+            g2.dispose();
+        }
+
+        @Override
+        protected void paintIndeterminate(Graphics g, JComponent c) {
+            paintDeterminate(g, c);
+        }
+    }
+
+    private static class ModernScrollBarUI extends BasicScrollBarUI {
+        @Override
+        protected void configureScrollBarColors() {
+            thumbColor = new Color(203, 213, 225);
+            trackColor = Color.WHITE;
+        }
+
+        @Override protected JButton createDecreaseButton(int orientation) { return zeroButton(); }
+        @Override protected JButton createIncreaseButton(int orientation) { return zeroButton(); }
+
+        private JButton zeroButton() {
+            JButton b = new JButton();
+            Dimension d = new Dimension(0, 0);
+            b.setPreferredSize(d);
+            b.setMinimumSize(d);
+            b.setMaximumSize(d);
+            return b;
+        }
+
+        @Override
+        protected void paintThumb(Graphics g, JComponent c, Rectangle r) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setColor(thumbColor);
+            g2.fillRoundRect(r.x + 2, r.y + 2, r.width - 4, r.height - 4, 8, 8);
+            g2.dispose();
+        }
+
+        @Override
+        protected void paintTrack(Graphics g, JComponent c, Rectangle r) {
+            g.setColor(trackColor);
+            g.fillRect(r.x, r.y, r.width, r.height);
+        }
     }
 }
