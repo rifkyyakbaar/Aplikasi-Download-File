@@ -1,0 +1,4 @@
+Line 1 ends with LF
+Line 2 ends with CRLF
+Line 3 ends with CRLine 4 ends with LF
+Line 5 has no terminator
