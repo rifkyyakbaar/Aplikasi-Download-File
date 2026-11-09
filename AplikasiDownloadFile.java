@@ -26,13 +26,10 @@ public class AplikasiDownloadFile extends JFrame {
     private static final Color SUCCESS   = new Color(39, 174, 96);
     private static final Color WARNING   = new Color(217, 119, 6);
 
-    /** Ukuran buffer baca-tulis (8 KB, lebih efisien daripada 1 KB). */
     private static final int UKURAN_BUFFER = 8192;
-    /** Batas waktu menunggu server (milidetik). */
     private static final int TIMEOUT_KONEKSI = 15_000;
     private static final int TIMEOUT_BACA    = 30_000;
 
-    /** Folder tempat file disimpan (folder kerja program). */
     private static final File FOLDER_DOWNLOAD = new File(System.getProperty("user.dir"));
 
     private JTextField txtUrl;
@@ -45,15 +42,11 @@ public class AplikasiDownloadFile extends JFrame {
 
     private JLabel lblStatusKiri, lblStatusKanan;
 
-    // ---- Status download (dibaca/ditulis dari dua thread, jadi pakai volatile) ----
-    /** true selama ada download yang berjalan. */
+
     private volatile boolean sedangDownload = false;
-    /** Diset true oleh tombol "Batalkan"; dicek oleh thread download di setiap putaran loop. */
     private volatile boolean dibatalkan = false;
-    /** Koneksi yang sedang aktif, supaya bisa diputus paksa saat dibatalkan. */
     private volatile URLConnection koneksiAktif = null;
 
-    /** Exception khusus untuk membedakan "dibatalkan pengguna" dari error biasa. */
     private static class DownloadDibatalkanException extends IOException {
         private static final long serialVersionUID = 1L;
         DownloadDibatalkanException() { super("Download dibatalkan oleh pengguna"); }
@@ -110,7 +103,6 @@ public class AplikasiDownloadFile extends JFrame {
             @Override public void focusGained(FocusEvent e) { txtUrl.setBorder(new RoundBorder(PRIMARY)); }
             @Override public void focusLost(FocusEvent e)   { txtUrl.setBorder(new RoundBorder(LINE)); }
         });
-        // Tekan Enter di kolom URL = mulai download
         txtUrl.addActionListener(e -> { if (!sedangDownload) mulaiDownload(); });
 
         btnTempel = new RoundedButton("Tempel", Color.WHITE, new Color(239, 246, 255), PRIMARY, PRIMARY);
@@ -279,7 +271,6 @@ public class AplikasiDownloadFile extends JFrame {
         btnDownload = new RoundedButton("Mulai Download", PRIMARY, PRIMARY_H, Color.WHITE, null);
         btnDownload.setFont(new Font("Segoe UI", Font.BOLD, 15));
         btnDownload.setPreferredSize(new Dimension(400, 44));
-        // Satu tombol, dua fungsi: mulai download, atau batalkan kalau sedang berjalan
         btnDownload.addActionListener(e -> {
             if (sedangDownload) batalkanDownload();
             else mulaiDownload();
@@ -321,9 +312,7 @@ public class AplikasiDownloadFile extends JFrame {
                 JOptionPane.showMessageDialog(this, "File tidak ditemukan:\n" + file.getAbsolutePath(), "Error", JOptionPane.ERROR_MESSAGE);
                 return;
             }
-            // Java (Desktop.open) menolak menjalankan file executable di Windows,
-            // dan menjalankan installer otomatis juga kurang aman.
-            // Jadi untuk file seperti ini, cukup tunjukkan file-nya di Explorer.
+
             if (isExecutable(file)) {
                 tampilkanDiFolder(file);
                 return;
@@ -331,7 +320,6 @@ public class AplikasiDownloadFile extends JFrame {
             try {
                 Desktop.getDesktop().open(file);
             } catch (Exception ex) {
-                // Misalnya tidak ada aplikasi yang terkait dengan ekstensi ini -> tunjukkan di folder saja
                 tampilkanDiFolder(file);
             }
         });
@@ -359,7 +347,6 @@ public class AplikasiDownloadFile extends JFrame {
 
         JPanel statusKanan = new JPanel(new FlowLayout(FlowLayout.RIGHT, 18, 0));
         statusKanan.setOpaque(false);
-        // Label "Koneksi: Terhubung" dihapus karena hanya teks statis yang tidak pernah dicek.
         lblStatusKanan = new JLabel("Berhasil: 0   •   Gagal: 0   •   Dibatalkan: 0");
         lblStatusKanan.setFont(fontStatus);
         lblStatusKanan.setForeground(MUTED);
@@ -378,9 +365,6 @@ public class AplikasiDownloadFile extends JFrame {
         add(panelBawah, BorderLayout.SOUTH);
     }
 
-    // =====================================================================
-    //                              LOGIKA DOWNLOAD
-    // =====================================================================
 
     private void mulaiDownload() {
         String urlString = txtUrl.getText().trim();
@@ -399,27 +383,24 @@ public class AplikasiDownloadFile extends JFrame {
         lblStatusKiri.setText("Mengunduh...");
 
         Thread downloadThread = new Thread(() -> prosesDownloadDanEkstrak(urlString), "download-thread");
-        downloadThread.setDaemon(true); // thread ikut berhenti kalau jendela ditutup
+        downloadThread.setDaemon(true); 
         downloadThread.start();
     }
 
-    /** Dipanggil dari EDT saat tombol "Batalkan Download" ditekan. */
     private void batalkanDownload() {
-        dibatalkan = true; // thread download akan melihat ini di putaran loop berikutnya
+        dibatalkan = true; 
         btnDownload.setEnabled(false);
         btnDownload.setText("Membatalkan...");
         lblStatus.setText("Status: Membatalkan download...");
         lblStatus.setForeground(WARNING);
 
-        // Kalau thread sedang "macet" menunggu data dari server (read() memblokir),
-        // memutus koneksi akan membuat read() langsung melempar exception.
+
         URLConnection k = koneksiAktif;
         if (k instanceof HttpURLConnection) {
             new Thread(((HttpURLConnection) k)::disconnect, "putus-koneksi").start();
         }
     }
 
-    /** Berjalan di thread terpisah. Semua perubahan GUI lewat SwingUtilities.invokeLater. */
     private void prosesDownloadDanEkstrak(String urlString) {
         String namaFileUntukHistory = "-";
         String ukuranUntukHistory = "Tidak diketahui";
@@ -428,19 +409,16 @@ public class AplikasiDownloadFile extends JFrame {
         boolean downloadSelesai = false;
 
         try {
-            // ---------- 1 & 2. Buka koneksi (ikuti redirect) + cek kode status HTTP ----------
+
             URL url = new URI(urlString).toURL();
             URLConnection koneksi = bukaKoneksi(url);
 
             if (dibatalkan) throw new DownloadDibatalkanException();
 
-            // long, bukan int, supaya file > 2 GB tetap terbaca benar (-1 = tidak diketahui)
             long ukuranFileTotal = koneksi.getContentLengthLong();
 
-            // ---------- 3. Tentukan nama file ----------
-            // getURL() setelah tersambung = URL akhir (sesudah redirect, kalau ada)
             String namaAsli = ambilNamaFileDariUrl(koneksi.getURL());
-            fileTujuan = buatFileUnik(namaAsli); // hindari menimpa file lama
+            fileTujuan = buatFileUnik(namaAsli); 
             final File file = fileTujuan;
             final String namaFile = file.getName();
             namaFileUntukHistory = namaFile;
@@ -457,8 +435,6 @@ public class AplikasiDownloadFile extends JFrame {
                 if (ukuranFileTotal <= 0) progressBar.setString("Ukuran file tidak diketahui...");
             });
 
-            // ---------- 4. Salin byte dari jaringan ke file ----------
-            // try-with-resources: kedua stream PASTI ditutup, baik sukses maupun error
             long totalBytesDiterima = 0;
             try (BufferedInputStream inStream = new BufferedInputStream(koneksi.getInputStream());
                  BufferedOutputStream outStream = new BufferedOutputStream(new FileOutputStream(file))) {
@@ -469,14 +445,12 @@ public class AplikasiDownloadFile extends JFrame {
                 long waktuUpdateTerakhir = 0;
 
                 while ((bytesRead = inStream.read(buffer)) != -1) {
-                    // Cek tombol Batalkan di setiap putaran (setiap ~8 KB)
                     if (dibatalkan) throw new DownloadDibatalkanException();
 
                     outStream.write(buffer, 0, bytesRead);
                     totalBytesDiterima += bytesRead;
 
                     if (ukuranFileTotal > 0) {
-                        // Update GUI hanya kalau persentase berubah (maks. 100x per file)
                         int persen = (int) Math.min(100, totalBytesDiterima * 100 / ukuranFileTotal);
                         if (persen != persenTerakhir) {
                             persenTerakhir = persen;
@@ -488,7 +462,6 @@ public class AplikasiDownloadFile extends JFrame {
                             });
                         }
                     } else {
-                        // Ukuran tidak diketahui: tampilkan jumlah yang sudah diterima, maks. 5x per detik
                         long sekarang = System.currentTimeMillis();
                         if (sekarang - waktuUpdateTerakhir >= 200) {
                             waktuUpdateTerakhir = sekarang;
@@ -497,11 +470,10 @@ public class AplikasiDownloadFile extends JFrame {
                         }
                     }
                 }
-            } // <- stream ditutup otomatis di sini (close() sudah termasuk flush())
+            }
 
             if (dibatalkan) throw new DownloadDibatalkanException();
 
-            // Kalau server mengirim Content-Length tapi data yang diterima kurang, berarti terputus
             if (ukuranFileTotal > 0 && totalBytesDiterima < ukuranFileTotal) {
                 throw new IOException("Koneksi terputus: hanya " + formatMB(totalBytesDiterima)
                         + " dari " + formatMB(ukuranFileTotal) + " yang diterima");
@@ -522,13 +494,11 @@ public class AplikasiDownloadFile extends JFrame {
                 lblStatus.setForeground(SUCCESS);
                 kembalikanTombolSemula();
 
-                // ---------- 5. Tawarkan ekstrak ZIP (dialog di EDT) ----------
                 if (namaFile.toLowerCase().endsWith(".zip")) {
                     int pilihan = JOptionPane.showConfirmDialog(this,
                             "File yang didownload berformat ZIP.\nApakah kamu ingin mengekstraknya sekarang?",
                             "Ekstrak File ZIP", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
                     if (pilihan == JOptionPane.YES_OPTION) {
-                        // Ekstraksi bisa lama, jadi dijalankan di thread terpisah
                         Thread t = new Thread(() -> ekstrakZip(file), "ekstrak-thread");
                         t.setDaemon(true);
                         t.start();
@@ -537,13 +507,10 @@ public class AplikasiDownloadFile extends JFrame {
             });
 
         } catch (Exception e) {
-            // Hapus file setengah jadi supaya tidak dikira file utuh
             if (!downloadSelesai && fileTujuan != null && fileTujuan.exists()) {
                 fileTujuan.delete();
             }
 
-            // Kalau pengguna menekan Batalkan, exception apa pun yang muncul
-            // (termasuk SocketException karena koneksi diputus) dianggap "Dibatalkan", bukan error.
             if (dibatalkan) {
                 tambahKeHistory(urlString, namaFileUntukHistory, ukuranUntukHistory, jenisUntukHistory, "Dibatalkan");
                 SwingUtilities.invokeLater(() -> {
@@ -576,11 +543,9 @@ public class AplikasiDownloadFile extends JFrame {
             || n.endsWith(".com") || n.endsWith(".scr") || n.endsWith(".ps1") || n.endsWith(".jar");
     }
 
-    /** Buka folder tempat file berada, dengan file tersebut sudah terpilih (di Windows). */
     private void tampilkanDiFolder(File file) {
         try {
             if (System.getProperty("os.name").toLowerCase().contains("win")) {
-                // explorer.exe /select,"path" -> buka Explorer dan sorot file-nya
                 new ProcessBuilder("explorer.exe", "/select,", file.getAbsolutePath()).start();
             } else {
                 Desktop.getDesktop().open(file.getParentFile());
@@ -590,40 +555,30 @@ public class AplikasiDownloadFile extends JFrame {
         }
     }
 
-    /** Batas redirect supaya tidak terjebak loop redirect tanpa akhir. */
     private static final int MAKS_REDIRECT = 5;
 
-    /**
-     * Membuka koneksi dan mengikuti redirect secara manual.
-     *
-     * HttpURLConnection bawaan Java hanya mengikuti redirect di protokol yang SAMA.
-     * Redirect http:// -> https:// (sangat umum) tidak diikuti, sehingga kita
-     * hanya mendapat kode 301/302. Karena itu redirect ditangani sendiri di sini.
-     */
     private URLConnection bukaKoneksi(URL url) throws IOException, URISyntaxException {
         for (int i = 0; i <= MAKS_REDIRECT; i++) {
             URLConnection koneksi = url.openConnection();
-            koneksiAktif = koneksi; // simpan supaya tombol Batalkan bisa memutusnya
+            koneksiAktif = koneksi; 
             koneksi.setConnectTimeout(TIMEOUT_KONEKSI);
             koneksi.setReadTimeout(TIMEOUT_BACA);
-            // Beberapa server menolak User-Agent bawaan Java, jadi kita isi sendiri
             koneksi.setRequestProperty("User-Agent", "Mozilla/5.0 (VelocityFetch/1.0)");
 
             if (!(koneksi instanceof HttpURLConnection)) {
-                return koneksi; // misalnya file:// atau ftp://, tidak ada kode status
+                return koneksi; 
             }
 
             HttpURLConnection http = (HttpURLConnection) koneksi;
-            http.setInstanceFollowRedirects(false); // kita tangani sendiri
-            int kode = http.getResponseCode();      // baris ini yang benar-benar menyambung ke server
-
+            http.setInstanceFollowRedirects(false); 
+            int kode = http.getResponseCode();    
             if (kode >= 200 && kode < 300) {
-                return http; // berhasil
+                return http;
             }
 
-            boolean redirect = kode == HttpURLConnection.HTTP_MOVED_PERM   // 301
-                            || kode == HttpURLConnection.HTTP_MOVED_TEMP   // 302
-                            || kode == HttpURLConnection.HTTP_SEE_OTHER    // 303
+            boolean redirect = kode == HttpURLConnection.HTTP_MOVED_PERM   
+                            || kode == HttpURLConnection.HTTP_MOVED_TEMP   
+                            || kode == HttpURLConnection.HTTP_SEE_OTHER   
                             || kode == 307 || kode == 308;
             if (!redirect) {
                 throw new IOException("Server membalas kode " + kode + " (" + http.getResponseMessage() + ")");
@@ -636,7 +591,6 @@ public class AplikasiDownloadFile extends JFrame {
             }
             if (dibatalkan) throw new DownloadDibatalkanException();
 
-            // Location bisa relatif ("/file/baru.zip"), jadi digabung dengan URL lama
             url = url.toURI().resolve(lokasi).toURL();
 
             final String alamatBaru = url.toString();
@@ -645,23 +599,21 @@ public class AplikasiDownloadFile extends JFrame {
         throw new IOException("Terlalu banyak redirect (lebih dari " + MAKS_REDIRECT + "x)");
     }
 
-    /** Ambil nama file dari bagian path URL, decode %20 dsb., dan buang karakter terlarang. */
     private String ambilNamaFileDariUrl(URL url) {
         String path = url.getPath();
         String nama = path.substring(path.lastIndexOf('/') + 1);
         try {
-            nama = URLDecoder.decode(nama, StandardCharsets.UTF_8.name()); // "laporan%20akhir.pdf" -> "laporan akhir.pdf"
+            nama = URLDecoder.decode(nama, StandardCharsets.UTF_8.name()); 
         } catch (Exception ignored) {
             // biarkan nama apa adanya
         }
-        nama = nama.replaceAll("[\\\\/:*?\"<>|]", "_").trim(); // karakter yang tidak boleh di nama file Windows
+        nama = nama.replaceAll("[\\\\/:*?\"<>|]", "_").trim(); 
         if (nama.isEmpty() || !nama.contains(".")) {
             nama = "downloaded_file.bin";
         }
         return nama;
     }
 
-    /** Kalau nama sudah dipakai, tambahkan nomor: "data.pdf" -> "data (1).pdf". */
     private File buatFileUnik(String nama) {
         File file = new File(FOLDER_DOWNLOAD, nama);
         if (!file.exists()) return file;
@@ -697,7 +649,6 @@ public class AplikasiDownloadFile extends JFrame {
         });
     }
 
-    /** Hitung isi tabel riwayat per status, bukan sekadar jumlah baris. */
     private void updateStatusBar() {
         int berhasil = 0, gagal = 0, batal = 0;
         for (int i = 0; i < tableModel.getRowCount(); i++) {
@@ -709,7 +660,6 @@ public class AplikasiDownloadFile extends JFrame {
         lblStatusKanan.setText("Berhasil: " + berhasil + "   •   Gagal: " + gagal + "   •   Dibatalkan: " + batal);
     }
 
-    /** Harus dipanggil dari EDT. */
     private void kembalikanTombolSemula() {
         sedangDownload = false;
         koneksiAktif = null;
@@ -718,11 +668,6 @@ public class AplikasiDownloadFile extends JFrame {
         lblStatusKiri.setText("Siap");
     }
 
-    // =====================================================================
-    //                              EKSTRAK ZIP
-    // =====================================================================
-
-    /** Berjalan di thread terpisah. Semua dialog lewat SwingUtilities.invokeLater. */
     private void ekstrakZip(File fileZip) {
         String namaZip = fileZip.getName();
         File folderTarget = new File(fileZip.getParentFile(), namaZip.substring(0, namaZip.length() - 4));
@@ -747,7 +692,6 @@ public class AplikasiDownloadFile extends JFrame {
                 while ((entry = zis.getNextEntry()) != null) {
                     File fileBaru = new File(folderTarget, entry.getName());
 
-                    // Cegah "Zip Slip": entry seperti "../../virus.exe" tidak boleh keluar dari folder target
                     String pathBaru = fileBaru.getCanonicalPath();
                     if (!pathBaru.equals(batasAman) && !pathBaru.startsWith(batasAman + File.separator)) {
                         throw new IOException("Entry ZIP mencurigakan ditolak: " + entry.getName());
@@ -762,7 +706,6 @@ public class AplikasiDownloadFile extends JFrame {
                         if (!parent.isDirectory() && !parent.mkdirs()) {
                             throw new IOException("Gagal membuat folder: " + parent.getName());
                         }
-                        // Stream output untuk setiap file juga pakai try-with-resources
                         try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(fileBaru))) {
                             int len;
                             while ((len = zis.read(buffer)) > 0) {
@@ -795,7 +738,6 @@ public class AplikasiDownloadFile extends JFrame {
                         Desktop.getDesktop().open(folderTarget);
                     }
                 } catch (IOException ignored) {
-                    // folder sudah berhasil dibuat, gagal membuka jendela Explorer saja tidak masalah
                 }
             });
 
@@ -809,7 +751,6 @@ public class AplikasiDownloadFile extends JFrame {
             });
         }
     }
-
     public static void main(String[] args) {
         try {
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
@@ -819,12 +760,6 @@ public class AplikasiDownloadFile extends JFrame {
 
         SwingUtilities.invokeLater(() -> new AplikasiDownloadFile().setVisible(true));
     }
-
-    // =====================================================================
-    //                    KOMPONEN GUI KUSTOM (HANYA TAMPILAN)
-    // =====================================================================
-
-    /** Tombol dengan sudut membulat + efek hover/pressed. */
     private static class RoundedButton extends JButton {
         private final Color bg, hover, fg, border;
         private boolean over = false;
