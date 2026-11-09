@@ -321,10 +321,18 @@ public class AplikasiDownloadFile extends JFrame {
                 JOptionPane.showMessageDialog(this, "File tidak ditemukan:\n" + file.getAbsolutePath(), "Error", JOptionPane.ERROR_MESSAGE);
                 return;
             }
+            // Java (Desktop.open) menolak menjalankan file executable di Windows,
+            // dan menjalankan installer otomatis juga kurang aman.
+            // Jadi untuk file seperti ini, cukup tunjukkan file-nya di Explorer.
+            if (isExecutable(file)) {
+                tampilkanDiFolder(file);
+                return;
+            }
             try {
                 Desktop.getDesktop().open(file);
             } catch (Exception ex) {
-                JOptionPane.showMessageDialog(this, "Gagal membuka file: " + pesanError(ex), "Error", JOptionPane.ERROR_MESSAGE);
+                // Misalnya tidak ada aplikasi yang terkait dengan ekstensi ini -> tunjukkan di folder saja
+                tampilkanDiFolder(file);
             }
         });
 
@@ -352,7 +360,7 @@ public class AplikasiDownloadFile extends JFrame {
         JPanel statusKanan = new JPanel(new FlowLayout(FlowLayout.RIGHT, 18, 0));
         statusKanan.setOpaque(false);
         // Label "Koneksi: Terhubung" dihapus karena hanya teks statis yang tidak pernah dicek.
-        lblStatusKanan = new JLabel("Total: 0 Unduhan");
+        lblStatusKanan = new JLabel("Berhasil: 0   •   Gagal: 0   •   Dibatalkan: 0");
         lblStatusKanan.setFont(fontStatus);
         lblStatusKanan.setForeground(MUTED);
         statusKanan.add(lblStatusKanan);
@@ -420,23 +428,9 @@ public class AplikasiDownloadFile extends JFrame {
         boolean downloadSelesai = false;
 
         try {
-            // ---------- 1. Siapkan & buka koneksi ----------
+            // ---------- 1 & 2. Buka koneksi (ikuti redirect) + cek kode status HTTP ----------
             URL url = new URI(urlString).toURL();
-            URLConnection koneksi = url.openConnection();
-            koneksiAktif = koneksi; // simpan supaya tombol Batalkan bisa memutusnya
-            koneksi.setConnectTimeout(TIMEOUT_KONEKSI);
-            koneksi.setReadTimeout(TIMEOUT_BACA);
-            // Beberapa server menolak User-Agent bawaan Java, jadi kita isi sendiri
-            koneksi.setRequestProperty("User-Agent", "VelocityFetch/1.0");
-
-            // ---------- 2. Cek kode status HTTP ----------
-            if (koneksi instanceof HttpURLConnection) {
-                HttpURLConnection http = (HttpURLConnection) koneksi;
-                int kode = http.getResponseCode(); // baris ini yang benar-benar menyambung ke server
-                if (kode < 200 || kode >= 300) {
-                    throw new IOException("Server membalas kode " + kode + " (" + http.getResponseMessage() + ")");
-                }
-            }
+            URLConnection koneksi = bukaKoneksi(url);
 
             if (dibatalkan) throw new DownloadDibatalkanException();
 
@@ -576,6 +570,81 @@ public class AplikasiDownloadFile extends JFrame {
         }
     }
 
+    private static boolean isExecutable(File file) {
+        String n = file.getName().toLowerCase();
+        return n.endsWith(".exe") || n.endsWith(".msi") || n.endsWith(".bat") || n.endsWith(".cmd")
+            || n.endsWith(".com") || n.endsWith(".scr") || n.endsWith(".ps1") || n.endsWith(".jar");
+    }
+
+    /** Buka folder tempat file berada, dengan file tersebut sudah terpilih (di Windows). */
+    private void tampilkanDiFolder(File file) {
+        try {
+            if (System.getProperty("os.name").toLowerCase().contains("win")) {
+                // explorer.exe /select,"path" -> buka Explorer dan sorot file-nya
+                new ProcessBuilder("explorer.exe", "/select,", file.getAbsolutePath()).start();
+            } else {
+                Desktop.getDesktop().open(file.getParentFile());
+            }
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this, "Gagal membuka folder: " + pesanError(ex), "Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    /** Batas redirect supaya tidak terjebak loop redirect tanpa akhir. */
+    private static final int MAKS_REDIRECT = 5;
+
+    /**
+     * Membuka koneksi dan mengikuti redirect secara manual.
+     *
+     * HttpURLConnection bawaan Java hanya mengikuti redirect di protokol yang SAMA.
+     * Redirect http:// -> https:// (sangat umum) tidak diikuti, sehingga kita
+     * hanya mendapat kode 301/302. Karena itu redirect ditangani sendiri di sini.
+     */
+    private URLConnection bukaKoneksi(URL url) throws IOException, URISyntaxException {
+        for (int i = 0; i <= MAKS_REDIRECT; i++) {
+            URLConnection koneksi = url.openConnection();
+            koneksiAktif = koneksi; // simpan supaya tombol Batalkan bisa memutusnya
+            koneksi.setConnectTimeout(TIMEOUT_KONEKSI);
+            koneksi.setReadTimeout(TIMEOUT_BACA);
+            // Beberapa server menolak User-Agent bawaan Java, jadi kita isi sendiri
+            koneksi.setRequestProperty("User-Agent", "Mozilla/5.0 (VelocityFetch/1.0)");
+
+            if (!(koneksi instanceof HttpURLConnection)) {
+                return koneksi; // misalnya file:// atau ftp://, tidak ada kode status
+            }
+
+            HttpURLConnection http = (HttpURLConnection) koneksi;
+            http.setInstanceFollowRedirects(false); // kita tangani sendiri
+            int kode = http.getResponseCode();      // baris ini yang benar-benar menyambung ke server
+
+            if (kode >= 200 && kode < 300) {
+                return http; // berhasil
+            }
+
+            boolean redirect = kode == HttpURLConnection.HTTP_MOVED_PERM   // 301
+                            || kode == HttpURLConnection.HTTP_MOVED_TEMP   // 302
+                            || kode == HttpURLConnection.HTTP_SEE_OTHER    // 303
+                            || kode == 307 || kode == 308;
+            if (!redirect) {
+                throw new IOException("Server membalas kode " + kode + " (" + http.getResponseMessage() + ")");
+            }
+
+            String lokasi = http.getHeaderField("Location");
+            http.disconnect();
+            if (lokasi == null || lokasi.isEmpty()) {
+                throw new IOException("Server meminta redirect (" + kode + ") tapi tidak memberi alamat tujuan");
+            }
+            if (dibatalkan) throw new DownloadDibatalkanException();
+
+            // Location bisa relatif ("/file/baru.zip"), jadi digabung dengan URL lama
+            url = url.toURI().resolve(lokasi).toURL();
+
+            final String alamatBaru = url.toString();
+            SwingUtilities.invokeLater(() -> lblStatus.setText("Status: Dialihkan ke " + alamatBaru));
+        }
+        throw new IOException("Terlalu banyak redirect (lebih dari " + MAKS_REDIRECT + "x)");
+    }
+
     /** Ambil nama file dari bagian path URL, decode %20 dsb., dan buang karakter terlarang. */
     private String ambilNamaFileDariUrl(URL url) {
         String path = url.getPath();
@@ -628,8 +697,16 @@ public class AplikasiDownloadFile extends JFrame {
         });
     }
 
+    /** Hitung isi tabel riwayat per status, bukan sekadar jumlah baris. */
     private void updateStatusBar() {
-        lblStatusKanan.setText("Total: " + tableModel.getRowCount() + " Unduhan");
+        int berhasil = 0, gagal = 0, batal = 0;
+        for (int i = 0; i < tableModel.getRowCount(); i++) {
+            Object status = tableModel.getValueAt(i, 4);
+            if ("Berhasil".equals(status))        berhasil++;
+            else if ("Gagal".equals(status))      gagal++;
+            else if ("Dibatalkan".equals(status)) batal++;
+        }
+        lblStatusKanan.setText("Berhasil: " + berhasil + "   •   Gagal: " + gagal + "   •   Dibatalkan: " + batal);
     }
 
     /** Harus dipanggil dari EDT. */
