@@ -3,6 +3,7 @@ import java.awt.datatransfer.*;
 import java.awt.event.*;
 import java.io.*;
 import java.net.*;
+import java.nio.charset.StandardCharsets;
 import java.util.zip.*;
 import javax.swing.*;
 import javax.swing.border.*;
@@ -22,16 +23,41 @@ public class AplikasiDownloadFile extends JFrame {
     private static final Color ZEBRA     = new Color(249, 250, 251);
     private static final Color TRACK     = new Color(226, 232, 240);
     private static final Color DANGER    = new Color(220, 38, 38);
+    private static final Color SUCCESS   = new Color(39, 174, 96);
+    private static final Color WARNING   = new Color(217, 119, 6);
+
+    /** Ukuran buffer baca-tulis (8 KB, lebih efisien daripada 1 KB). */
+    private static final int UKURAN_BUFFER = 8192;
+    /** Batas waktu menunggu server (milidetik). */
+    private static final int TIMEOUT_KONEKSI = 15_000;
+    private static final int TIMEOUT_BACA    = 30_000;
+
+    /** Folder tempat file disimpan (folder kerja program). */
+    private static final File FOLDER_DOWNLOAD = new File(System.getProperty("user.dir"));
 
     private JTextField txtUrl;
     private JButton btnDownload, btnTempel, btnBukaFile, btnBukaFolder, btnHapus;
     private JProgressBar progressBar;
     private JLabel lblStatus;
-    
+
     private JTable tableHistory;
     private DefaultTableModel tableModel;
-    
-    private JLabel lblStatusKiri, lblStatusTengah, lblStatusKanan;
+
+    private JLabel lblStatusKiri, lblStatusKanan;
+
+    // ---- Status download (dibaca/ditulis dari dua thread, jadi pakai volatile) ----
+    /** true selama ada download yang berjalan. */
+    private volatile boolean sedangDownload = false;
+    /** Diset true oleh tombol "Batalkan"; dicek oleh thread download di setiap putaran loop. */
+    private volatile boolean dibatalkan = false;
+    /** Koneksi yang sedang aktif, supaya bisa diputus paksa saat dibatalkan. */
+    private volatile URLConnection koneksiAktif = null;
+
+    /** Exception khusus untuk membedakan "dibatalkan pengguna" dari error biasa. */
+    private static class DownloadDibatalkanException extends IOException {
+        private static final long serialVersionUID = 1L;
+        DownloadDibatalkanException() { super("Download dibatalkan oleh pengguna"); }
+    }
 
     public AplikasiDownloadFile() {
         setTitle("VelocityFetch - Advanced Download Manager");
@@ -84,18 +110,20 @@ public class AplikasiDownloadFile extends JFrame {
             @Override public void focusGained(FocusEvent e) { txtUrl.setBorder(new RoundBorder(PRIMARY)); }
             @Override public void focusLost(FocusEvent e)   { txtUrl.setBorder(new RoundBorder(LINE)); }
         });
-        
+        // Tekan Enter di kolom URL = mulai download
+        txtUrl.addActionListener(e -> { if (!sedangDownload) mulaiDownload(); });
+
         btnTempel = new RoundedButton("Tempel", Color.WHITE, new Color(239, 246, 255), PRIMARY, PRIMARY);
         btnTempel.setFont(new Font("Segoe UI", Font.BOLD, 13));
         btnTempel.setPreferredSize(new Dimension(95, 42));
-        
+
         btnTempel.addActionListener(e -> {
             try {
                 Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
                 Transferable contents = clipboard.getContents(null);
                 if (contents != null && contents.isDataFlavorSupported(DataFlavor.stringFlavor)) {
                     String pasteString = (String) contents.getTransferData(DataFlavor.stringFlavor);
-                    txtUrl.setText(pasteString);
+                    txtUrl.setText(pasteString.trim());
                 }
             } catch (Exception ex) {
                 JOptionPane.showMessageDialog(this, "Gagal menempelkan teks!", "Error", JOptionPane.ERROR_MESSAGE);
@@ -110,6 +138,7 @@ public class AplikasiDownloadFile extends JFrame {
         panelProgress.setOpaque(false);
         progressBar = new JProgressBar(0, 100);
         progressBar.setStringPainted(true);
+        progressBar.setString("0%");
         progressBar.setBorderPainted(false);
         progressBar.setFont(new Font("Segoe UI", Font.BOLD, 13));
         progressBar.setPreferredSize(new Dimension(100, 28));
@@ -117,8 +146,8 @@ public class AplikasiDownloadFile extends JFrame {
 
         lblStatus = new JLabel("Status: Menunggu input URL...", SwingConstants.LEFT);
         lblStatus.setFont(new Font("Segoe UI", Font.ITALIC, 13));
-        lblStatus.setForeground(new Color(39, 174, 96));
-        
+        lblStatus.setForeground(SUCCESS);
+
         panelProgress.add(progressBar, BorderLayout.CENTER);
         panelProgress.add(lblStatus, BorderLayout.SOUTH);
 
@@ -142,10 +171,11 @@ public class AplikasiDownloadFile extends JFrame {
         tableHistory.setSelectionBackground(PRIMARY);
         tableHistory.setSelectionForeground(Color.WHITE);
         tableHistory.setShowGrid(false);
-        tableHistory.setShowVerticalLines(false); 
+        tableHistory.setShowVerticalLines(false);
         tableHistory.setShowHorizontalLines(false);
         tableHistory.setIntercellSpacing(new Dimension(0, 0));
         tableHistory.setFillsViewportHeight(true);
+        tableHistory.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
 
         JTableHeader th = tableHistory.getTableHeader();
         th.setReorderingAllowed(false);
@@ -190,9 +220,11 @@ public class AplikasiDownloadFile extends JFrame {
                 if (!isSelected) {
                     l.setBackground(row % 2 == 0 ? Color.WHITE : ZEBRA);
                     if ("Berhasil".equals(value)) {
-                        l.setForeground(new Color(39, 174, 96));
+                        l.setForeground(SUCCESS);
                     } else if ("Gagal".equals(value)) {
                         l.setForeground(DANGER);
+                    } else if ("Dibatalkan".equals(value)) {
+                        l.setForeground(WARNING);
                     } else {
                         l.setForeground(TEXT);
                     }
@@ -243,11 +275,15 @@ public class AplikasiDownloadFile extends JFrame {
         JPanel panelAksi = new JPanel(new BorderLayout(12, 10));
         panelAksi.setOpaque(false);
         panelAksi.setBorder(BorderFactory.createEmptyBorder(6, 25, 14, 25));
-        
+
         btnDownload = new RoundedButton("Mulai Download", PRIMARY, PRIMARY_H, Color.WHITE, null);
         btnDownload.setFont(new Font("Segoe UI", Font.BOLD, 15));
         btnDownload.setPreferredSize(new Dimension(400, 44));
-        btnDownload.addActionListener(e -> mulaiDownload());
+        // Satu tombol, dua fungsi: mulai download, atau batalkan kalau sedang berjalan
+        btnDownload.addActionListener(e -> {
+            if (sedangDownload) batalkanDownload();
+            else mulaiDownload();
+        });
 
         JPanel panelTombolKanan = new JPanel(new GridLayout(1, 3, 8, 0));
         panelTombolKanan.setOpaque(false);
@@ -264,7 +300,7 @@ public class AplikasiDownloadFile extends JFrame {
 
         btnBukaFolder.addActionListener(e -> {
             try {
-                Desktop.getDesktop().open(new File(System.getProperty("user.dir")));
+                Desktop.getDesktop().open(FOLDER_DOWNLOAD);
             } catch (Exception ex) {
                 JOptionPane.showMessageDialog(this, "Gagal membuka folder!", "Error", JOptionPane.ERROR_MESSAGE);
             }
@@ -276,11 +312,19 @@ public class AplikasiDownloadFile extends JFrame {
                 JOptionPane.showMessageDialog(this, "Pilih file di tabel terlebih dahulu!", "Info", JOptionPane.INFORMATION_MESSAGE);
                 return;
             }
+            if (!"Berhasil".equals(tableModel.getValueAt(baris, 4))) {
+                JOptionPane.showMessageDialog(this, "Download untuk baris ini gagal, jadi tidak ada file yang bisa dibuka.", "Info", JOptionPane.INFORMATION_MESSAGE);
+                return;
+            }
+            File file = new File(FOLDER_DOWNLOAD, tableModel.getValueAt(baris, 1).toString());
+            if (!file.exists()) {
+                JOptionPane.showMessageDialog(this, "File tidak ditemukan:\n" + file.getAbsolutePath(), "Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
             try {
-                String namaFile = tableModel.getValueAt(baris, 1).toString();
-                Desktop.getDesktop().open(new File(namaFile));
+                Desktop.getDesktop().open(file);
             } catch (Exception ex) {
-                JOptionPane.showMessageDialog(this, "File tidak ditemukan atau gagal dibuka!", "Error", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Gagal membuka file: " + pesanError(ex), "Error", JOptionPane.ERROR_MESSAGE);
             }
         });
 
@@ -299,24 +343,20 @@ public class AplikasiDownloadFile extends JFrame {
         statusBar.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createMatteBorder(1, 0, 0, 0, LINE),
                 BorderFactory.createEmptyBorder(8, 25, 8, 25)));
-        
+
         Font fontStatus = new Font("Segoe UI", Font.PLAIN, 12);
         lblStatusKiri = new JLabel("Siap");
         lblStatusKiri.setFont(fontStatus);
         lblStatusKiri.setForeground(MUTED);
-        
+
         JPanel statusKanan = new JPanel(new FlowLayout(FlowLayout.RIGHT, 18, 0));
         statusKanan.setOpaque(false);
-        lblStatusTengah = new JLabel("Koneksi: Terhubung");
-        lblStatusTengah.setFont(fontStatus);
-        lblStatusTengah.setForeground(MUTED);
+        // Label "Koneksi: Terhubung" dihapus karena hanya teks statis yang tidak pernah dicek.
         lblStatusKanan = new JLabel("Total: 0 Unduhan");
         lblStatusKanan.setFont(fontStatus);
         lblStatusKanan.setForeground(MUTED);
-        
-        statusKanan.add(lblStatusTengah);
         statusKanan.add(lblStatusKanan);
-        
+
         statusBar.add(lblStatusKiri, BorderLayout.WEST);
         statusBar.add(statusKanan, BorderLayout.EAST);
 
@@ -326,9 +366,13 @@ public class AplikasiDownloadFile extends JFrame {
         panelBawah.add(statusBar, BorderLayout.SOUTH);
 
         add(header, BorderLayout.NORTH);
-        add(panelTengah, BorderLayout.CENTER); 
+        add(panelTengah, BorderLayout.CENTER);
         add(panelBawah, BorderLayout.SOUTH);
     }
+
+    // =====================================================================
+    //                              LOGIKA DOWNLOAD
+    // =====================================================================
 
     private void mulaiDownload() {
         String urlString = txtUrl.getText().trim();
@@ -337,103 +381,244 @@ public class AplikasiDownloadFile extends JFrame {
             return;
         }
 
-        btnDownload.setEnabled(false);
-        btnDownload.setText("Sedang Mendownload...");
+        sedangDownload = true;
+        dibatalkan = false;
+        btnDownload.setText("Batalkan Download");
         progressBar.setValue(0);
         progressBar.setString("Menghubungkan...");
         lblStatus.setText("Status: Menghubungkan ke server...");
         lblStatus.setForeground(new Color(0, 120, 215));
+        lblStatusKiri.setText("Mengunduh...");
 
-        Thread downloadThread = new Thread(() -> prosesDownloadDanEkstrak(urlString));
+        Thread downloadThread = new Thread(() -> prosesDownloadDanEkstrak(urlString), "download-thread");
+        downloadThread.setDaemon(true); // thread ikut berhenti kalau jendela ditutup
         downloadThread.start();
     }
 
+    /** Dipanggil dari EDT saat tombol "Batalkan Download" ditekan. */
+    private void batalkanDownload() {
+        dibatalkan = true; // thread download akan melihat ini di putaran loop berikutnya
+        btnDownload.setEnabled(false);
+        btnDownload.setText("Membatalkan...");
+        lblStatus.setText("Status: Membatalkan download...");
+        lblStatus.setForeground(WARNING);
+
+        // Kalau thread sedang "macet" menunggu data dari server (read() memblokir),
+        // memutus koneksi akan membuat read() langsung melempar exception.
+        URLConnection k = koneksiAktif;
+        if (k instanceof HttpURLConnection) {
+            new Thread(((HttpURLConnection) k)::disconnect, "putus-koneksi").start();
+        }
+    }
+
+    /** Berjalan di thread terpisah. Semua perubahan GUI lewat SwingUtilities.invokeLater. */
     private void prosesDownloadDanEkstrak(String urlString) {
         String namaFileUntukHistory = "-";
         String ukuranUntukHistory = "Tidak diketahui";
         String jenisUntukHistory = "Unknown";
+        File fileTujuan = null;
+        boolean downloadSelesai = false;
 
         try {
+            // ---------- 1. Siapkan & buka koneksi ----------
             URL url = new URI(urlString).toURL();
             URLConnection koneksi = url.openConnection();
-            int ukuranFileTotal = koneksi.getContentLength(); 
+            koneksiAktif = koneksi; // simpan supaya tombol Batalkan bisa memutusnya
+            koneksi.setConnectTimeout(TIMEOUT_KONEKSI);
+            koneksi.setReadTimeout(TIMEOUT_BACA);
+            // Beberapa server menolak User-Agent bawaan Java, jadi kita isi sendiri
+            koneksi.setRequestProperty("User-Agent", "VelocityFetch/1.0");
 
-            String path = url.getPath();                                   
-            String tempNama = path.substring(path.lastIndexOf('/') + 1);  
-
-            if (tempNama.isEmpty() || !tempNama.contains(".")) {
-            tempNama = "downloaded_file.bin";                          
-            }
-            final String namaFile = tempNama; 
-            namaFileUntukHistory = namaFile; 
-
-            if (namaFile.contains(".")) {
-                jenisUntukHistory = namaFile.substring(namaFile.lastIndexOf(".") + 1).toUpperCase();
-            }
-
-            if (ukuranFileTotal > 0) {
-                double mbTotal = (double) ukuranFileTotal / 1048576;
-                ukuranUntukHistory = String.format("%.2f MB", mbTotal);
-            }
-
-            SwingUtilities.invokeLater(() -> lblStatus.setText("Status: Mengunduh file " + namaFile + "..."));
-
-            BufferedInputStream inStream = new BufferedInputStream(koneksi.getInputStream());
-            BufferedOutputStream outStream = new BufferedOutputStream(new FileOutputStream(namaFile));
-
-            byte[] buffer = new byte[1024];
-            int bytesRead;
-            long totalBytesDiterima = 0;
-
-            while ((bytesRead = inStream.read(buffer, 0, 1024)) != -1) {
-                outStream.write(buffer, 0, bytesRead);
-                totalBytesDiterima += bytesRead;
-
-                if (ukuranFileTotal > 0) {
-                    int persentase = (int) ((totalBytesDiterima * 100) / ukuranFileTotal);
-                    double mbDiterima = (double) totalBytesDiterima / 1048576;
-                    double mbTotal = (double) ukuranFileTotal / 1048576;
-                    String progressTeks = String.format("%d%% (%.2f MB / %.2f MB)", persentase, mbDiterima, mbTotal);
-
-                    SwingUtilities.invokeLater(() -> {
-                        progressBar.setValue(persentase);
-                        progressBar.setString(progressTeks);
-                    });
+            // ---------- 2. Cek kode status HTTP ----------
+            if (koneksi instanceof HttpURLConnection) {
+                HttpURLConnection http = (HttpURLConnection) koneksi;
+                int kode = http.getResponseCode(); // baris ini yang benar-benar menyambung ke server
+                if (kode < 200 || kode >= 300) {
+                    throw new IOException("Server membalas kode " + kode + " (" + http.getResponseMessage() + ")");
                 }
             }
 
-            outStream.flush();
-            outStream.close();
-            inStream.close();
+            if (dibatalkan) throw new DownloadDibatalkanException();
+
+            // long, bukan int, supaya file > 2 GB tetap terbaca benar (-1 = tidak diketahui)
+            long ukuranFileTotal = koneksi.getContentLengthLong();
+
+            // ---------- 3. Tentukan nama file ----------
+            // getURL() setelah tersambung = URL akhir (sesudah redirect, kalau ada)
+            String namaAsli = ambilNamaFileDariUrl(koneksi.getURL());
+            fileTujuan = buatFileUnik(namaAsli); // hindari menimpa file lama
+            final File file = fileTujuan;
+            final String namaFile = file.getName();
+            namaFileUntukHistory = namaFile;
+
+            if (namaFile.contains(".")) {
+                jenisUntukHistory = namaFile.substring(namaFile.lastIndexOf('.') + 1).toUpperCase();
+            }
+            if (ukuranFileTotal > 0) {
+                ukuranUntukHistory = formatMB(ukuranFileTotal);
+            }
+
+            SwingUtilities.invokeLater(() -> {
+                lblStatus.setText("Status: Mengunduh file " + namaFile + "...");
+                if (ukuranFileTotal <= 0) progressBar.setString("Ukuran file tidak diketahui...");
+            });
+
+            // ---------- 4. Salin byte dari jaringan ke file ----------
+            // try-with-resources: kedua stream PASTI ditutup, baik sukses maupun error
+            long totalBytesDiterima = 0;
+            try (BufferedInputStream inStream = new BufferedInputStream(koneksi.getInputStream());
+                 BufferedOutputStream outStream = new BufferedOutputStream(new FileOutputStream(file))) {
+
+                byte[] buffer = new byte[UKURAN_BUFFER];
+                int bytesRead;
+                int persenTerakhir = -1;
+                long waktuUpdateTerakhir = 0;
+
+                while ((bytesRead = inStream.read(buffer)) != -1) {
+                    // Cek tombol Batalkan di setiap putaran (setiap ~8 KB)
+                    if (dibatalkan) throw new DownloadDibatalkanException();
+
+                    outStream.write(buffer, 0, bytesRead);
+                    totalBytesDiterima += bytesRead;
+
+                    if (ukuranFileTotal > 0) {
+                        // Update GUI hanya kalau persentase berubah (maks. 100x per file)
+                        int persen = (int) Math.min(100, totalBytesDiterima * 100 / ukuranFileTotal);
+                        if (persen != persenTerakhir) {
+                            persenTerakhir = persen;
+                            String teks = String.format("%d%% (%s / %s)", persen,
+                                    formatMB(totalBytesDiterima), formatMB(ukuranFileTotal));
+                            SwingUtilities.invokeLater(() -> {
+                                progressBar.setValue(persen);
+                                progressBar.setString(teks);
+                            });
+                        }
+                    } else {
+                        // Ukuran tidak diketahui: tampilkan jumlah yang sudah diterima, maks. 5x per detik
+                        long sekarang = System.currentTimeMillis();
+                        if (sekarang - waktuUpdateTerakhir >= 200) {
+                            waktuUpdateTerakhir = sekarang;
+                            String teks = formatMB(totalBytesDiterima) + " diterima";
+                            SwingUtilities.invokeLater(() -> progressBar.setString(teks));
+                        }
+                    }
+                }
+            } // <- stream ditutup otomatis di sini (close() sudah termasuk flush())
+
+            if (dibatalkan) throw new DownloadDibatalkanException();
+
+            // Kalau server mengirim Content-Length tapi data yang diterima kurang, berarti terputus
+            if (ukuranFileTotal > 0 && totalBytesDiterima < ukuranFileTotal) {
+                throw new IOException("Koneksi terputus: hanya " + formatMB(totalBytesDiterima)
+                        + " dari " + formatMB(ukuranFileTotal) + " yang diterima");
+            }
+
+            downloadSelesai = true;
+            if (ukuranFileTotal <= 0) {
+                ukuranUntukHistory = formatMB(totalBytesDiterima);
+            }
 
             tambahKeHistory(urlString, namaFileUntukHistory, ukuranUntukHistory, jenisUntukHistory, "Berhasil");
 
+            final String ukuranAkhir = ukuranUntukHistory;
             SwingUtilities.invokeLater(() -> {
-                lblStatus.setText("Status: Selesai!");
-                lblStatus.setForeground(new Color(39, 174, 96));
+                progressBar.setValue(100);
+                progressBar.setString("100% (" + ukuranAkhir + ")");
+                lblStatus.setText("Status: Selesai! Tersimpan sebagai " + namaFile);
+                lblStatus.setForeground(SUCCESS);
                 kembalikanTombolSemula();
-            });
 
-            if (namaFile.toLowerCase().endsWith(".zip")) {
-                int pilihan = JOptionPane.showConfirmDialog(this,
-                        "File yang didownload berformat ZIP.\nApakah kamu ingin mengekstraknya sekarang?",
-                        "Ekstrak File ZIP", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
-                if (pilihan == JOptionPane.YES_OPTION) {
-                    ekstrakZip(namaFile);
+                // ---------- 5. Tawarkan ekstrak ZIP (dialog di EDT) ----------
+                if (namaFile.toLowerCase().endsWith(".zip")) {
+                    int pilihan = JOptionPane.showConfirmDialog(this,
+                            "File yang didownload berformat ZIP.\nApakah kamu ingin mengekstraknya sekarang?",
+                            "Ekstrak File ZIP", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
+                    if (pilihan == JOptionPane.YES_OPTION) {
+                        // Ekstraksi bisa lama, jadi dijalankan di thread terpisah
+                        Thread t = new Thread(() -> ekstrakZip(file), "ekstrak-thread");
+                        t.setDaemon(true);
+                        t.start();
+                    }
                 }
-            }
+            });
 
         } catch (Exception e) {
+            // Hapus file setengah jadi supaya tidak dikira file utuh
+            if (!downloadSelesai && fileTujuan != null && fileTujuan.exists()) {
+                fileTujuan.delete();
+            }
+
+            // Kalau pengguna menekan Batalkan, exception apa pun yang muncul
+            // (termasuk SocketException karena koneksi diputus) dianggap "Dibatalkan", bukan error.
+            if (dibatalkan) {
+                tambahKeHistory(urlString, namaFileUntukHistory, ukuranUntukHistory, jenisUntukHistory, "Dibatalkan");
+                SwingUtilities.invokeLater(() -> {
+                    lblStatus.setText("Status: Download dibatalkan.");
+                    lblStatus.setForeground(WARNING);
+                    progressBar.setValue(0);
+                    progressBar.setString("Dibatalkan");
+                    kembalikanTombolSemula();
+                });
+                return;
+            }
+
             tambahKeHistory(urlString, namaFileUntukHistory, ukuranUntukHistory, jenisUntukHistory, "Gagal");
 
+            String pesan = pesanError(e);
             SwingUtilities.invokeLater(() -> {
                 lblStatus.setText("Status: Gagal mengunduh!");
-                lblStatus.setForeground(Color.RED);
+                lblStatus.setForeground(DANGER);
+                progressBar.setValue(0);
                 progressBar.setString("Error!");
                 kembalikanTombolSemula();
-                JOptionPane.showMessageDialog(this, "Gagal mendownload: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Gagal mendownload:\n" + pesan, "Error", JOptionPane.ERROR_MESSAGE);
             });
         }
+    }
+
+    /** Ambil nama file dari bagian path URL, decode %20 dsb., dan buang karakter terlarang. */
+    private String ambilNamaFileDariUrl(URL url) {
+        String path = url.getPath();
+        String nama = path.substring(path.lastIndexOf('/') + 1);
+        try {
+            nama = URLDecoder.decode(nama, StandardCharsets.UTF_8.name()); // "laporan%20akhir.pdf" -> "laporan akhir.pdf"
+        } catch (Exception ignored) {
+            // biarkan nama apa adanya
+        }
+        nama = nama.replaceAll("[\\\\/:*?\"<>|]", "_").trim(); // karakter yang tidak boleh di nama file Windows
+        if (nama.isEmpty() || !nama.contains(".")) {
+            nama = "downloaded_file.bin";
+        }
+        return nama;
+    }
+
+    /** Kalau nama sudah dipakai, tambahkan nomor: "data.pdf" -> "data (1).pdf". */
+    private File buatFileUnik(String nama) {
+        File file = new File(FOLDER_DOWNLOAD, nama);
+        if (!file.exists()) return file;
+
+        int titik = nama.lastIndexOf('.');
+        String dasar = titik > 0 ? nama.substring(0, titik) : nama;
+        String ekstensi = titik > 0 ? nama.substring(titik) : "";
+        int nomor = 1;
+        while (file.exists()) {
+            file = new File(FOLDER_DOWNLOAD, dasar + " (" + nomor++ + ")" + ekstensi);
+        }
+        return file;
+    }
+
+    private static String formatMB(long bytes) {
+        return String.format("%.2f MB", bytes / 1048576.0);
+    }
+
+    private static String pesanError(Exception e) {
+        if (e instanceof UnknownHostException)    return "Server tidak ditemukan: " + e.getMessage();
+        if (e instanceof SocketTimeoutException)  return "Server terlalu lama merespons (timeout).";
+        if (e instanceof URISyntaxException)      return "Format URL tidak valid.";
+        if (e instanceof MalformedURLException)   return "URL tidak dikenali (pastikan diawali http:// atau https://).";
+        if (e instanceof IllegalArgumentException) return "URL tidak lengkap (pastikan diawali http:// atau https://).";
+        String pesan = e.getMessage();
+        return (pesan == null || pesan.isEmpty()) ? e.getClass().getSimpleName() : pesan;
     }
 
     private void tambahKeHistory(String url, String namaFile, String ukuran, String jenis, String status) {
@@ -442,51 +627,109 @@ public class AplikasiDownloadFile extends JFrame {
             updateStatusBar();
         });
     }
-    
+
     private void updateStatusBar() {
         lblStatusKanan.setText("Total: " + tableModel.getRowCount() + " Unduhan");
     }
 
+    /** Harus dipanggil dari EDT. */
     private void kembalikanTombolSemula() {
+        sedangDownload = false;
+        koneksiAktif = null;
         btnDownload.setEnabled(true);
         btnDownload.setText("Mulai Download");
+        lblStatusKiri.setText("Siap");
     }
 
-    private void ekstrakZip(String namaFileZip) {
-        String namaFolderTarget = namaFileZip.substring(0, namaFileZip.length() - 4);
-        File folderTarget = new File(namaFolderTarget);
-        if (!folderTarget.exists()) {
-            folderTarget.mkdir();
-        }
+    // =====================================================================
+    //                              EKSTRAK ZIP
+    // =====================================================================
 
-        try (ZipInputStream zis = new ZipInputStream(new FileInputStream(namaFileZip))) {
-            ZipEntry zipEntry = zis.getNextEntry();
-            while (zipEntry != null) {
-                File fileBaru = new File(folderTarget, zipEntry.getName());
-                if (zipEntry.isDirectory()) {
-                    fileBaru.mkdirs();
-                } else {
-                    new File(fileBaru.getParent()).mkdirs();
-                    
-                    BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(fileBaru));
-                    byte[] buffer = new byte[1024];
-                    int len;
-                    while ((len = zis.read(buffer)) > 0) {
-                        bos.write(buffer, 0, len);
+    /** Berjalan di thread terpisah. Semua dialog lewat SwingUtilities.invokeLater. */
+    private void ekstrakZip(File fileZip) {
+        String namaZip = fileZip.getName();
+        File folderTarget = new File(fileZip.getParentFile(), namaZip.substring(0, namaZip.length() - 4));
+
+        SwingUtilities.invokeLater(() -> {
+            lblStatus.setText("Status: Mengekstrak " + namaZip + "...");
+            lblStatus.setForeground(new Color(0, 120, 215));
+            lblStatusKiri.setText("Mengekstrak...");
+        });
+
+        try {
+            if (!folderTarget.isDirectory() && !folderTarget.mkdirs()) {
+                throw new IOException("Gagal membuat folder " + folderTarget.getName());
+            }
+            String batasAman = folderTarget.getCanonicalPath();
+            int jumlahFile = 0;
+
+            try (ZipInputStream zis = new ZipInputStream(new BufferedInputStream(new FileInputStream(fileZip)))) {
+                byte[] buffer = new byte[UKURAN_BUFFER];
+                ZipEntry entry;
+
+                while ((entry = zis.getNextEntry()) != null) {
+                    File fileBaru = new File(folderTarget, entry.getName());
+
+                    // Cegah "Zip Slip": entry seperti "../../virus.exe" tidak boleh keluar dari folder target
+                    String pathBaru = fileBaru.getCanonicalPath();
+                    if (!pathBaru.equals(batasAman) && !pathBaru.startsWith(batasAman + File.separator)) {
+                        throw new IOException("Entry ZIP mencurigakan ditolak: " + entry.getName());
                     }
-                    bos.flush();
-                    bos.close();
+
+                    if (entry.isDirectory()) {
+                        if (!fileBaru.isDirectory() && !fileBaru.mkdirs()) {
+                            throw new IOException("Gagal membuat folder: " + entry.getName());
+                        }
+                    } else {
+                        File parent = fileBaru.getParentFile();
+                        if (!parent.isDirectory() && !parent.mkdirs()) {
+                            throw new IOException("Gagal membuat folder: " + parent.getName());
+                        }
+                        // Stream output untuk setiap file juga pakai try-with-resources
+                        try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(fileBaru))) {
+                            int len;
+                            while ((len = zis.read(buffer)) > 0) {
+                                bos.write(buffer, 0, len);
+                            }
+                        }
+                        jumlahFile++;
+                    }
                 }
-                zipEntry = zis.getNextEntry();
             }
-            zis.closeEntry();
-            JOptionPane.showMessageDialog(this, "Ekstraksi berhasil ke folder: " + namaFolderTarget, "Info", JOptionPane.INFORMATION_MESSAGE);
-            
-            if (Desktop.isDesktopSupported()) {
-                Desktop.getDesktop().open(folderTarget);
-            }
+
+            final int total = jumlahFile;
+            SwingUtilities.invokeLater(() -> {
+                lblStatusKiri.setText("Siap");
+                if (total == 0) {
+                    lblStatus.setText("Status: Tidak ada file yang diekstrak.");
+                    lblStatus.setForeground(DANGER);
+                    JOptionPane.showMessageDialog(this,
+                            "Tidak ada file yang bisa diekstrak.\nKemungkinan file ini bukan arsip ZIP yang valid.",
+                            "Info", JOptionPane.WARNING_MESSAGE);
+                    return;
+                }
+                lblStatus.setText("Status: " + total + " file diekstrak ke folder " + folderTarget.getName());
+                lblStatus.setForeground(SUCCESS);
+                JOptionPane.showMessageDialog(this,
+                        "Ekstraksi berhasil (" + total + " file) ke folder:\n" + folderTarget.getAbsolutePath(),
+                        "Info", JOptionPane.INFORMATION_MESSAGE);
+                try {
+                    if (Desktop.isDesktopSupported()) {
+                        Desktop.getDesktop().open(folderTarget);
+                    }
+                } catch (IOException ignored) {
+                    // folder sudah berhasil dibuat, gagal membuka jendela Explorer saja tidak masalah
+                }
+            });
+
         } catch (IOException e) {
-            JOptionPane.showMessageDialog(this, "Gagal mengekstrak: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+            String pesan = pesanError(e);
+            SwingUtilities.invokeLater(() -> {
+                lblStatusKiri.setText("Siap");
+                lblStatus.setText("Status: Gagal mengekstrak!");
+                lblStatus.setForeground(DANGER);
+                JOptionPane.showMessageDialog(this, "Gagal mengekstrak:\n" + pesan, "Error", JOptionPane.ERROR_MESSAGE);
+            });
         }
     }
 
