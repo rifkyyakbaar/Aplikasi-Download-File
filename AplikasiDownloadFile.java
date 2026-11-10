@@ -632,7 +632,6 @@ public class AplikasiDownloadFile extends JFrame {
         try {
             nama = URLDecoder.decode(nama, StandardCharsets.UTF_8.name());
         } catch (Exception ignored) {
-            // biarkan nama apa adanya
         }
         return bersihkanNama(nama);
     }
