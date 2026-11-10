@@ -609,26 +609,16 @@ public class AplikasiDownloadFile extends JFrame {
         throw new IOException("Terlalu banyak redirect (lebih dari " + MAKS_REDIRECT + "x)");
     }
 
-    /**
-     * Menentukan nama file, dicoba berurutan:
-     * 1. Header Content-Disposition dari server (nama "resmi" yang diberikan server)
-     * 2. Nama di ujung URL akhir (setelah redirect)
-     * 3. Nama di ujung URL asli yang diketik pengguna
-     * 4. Kalau semuanya tidak punya ekstensi, ekstensi ditebak dari header Content-Type
-     */
     private String tentukanNamaFile(URLConnection koneksi, URL urlAsli) {
-        // 1. Content-Disposition, contoh: attachment; filename="proyek-main.zip"
         String dariServer = ambilNamaDariContentDisposition(koneksi.getHeaderField("Content-Disposition"));
         if (dariServer != null && dariServer.contains(".")) return dariServer;
 
-        // 2 & 3. Ujung URL akhir, lalu ujung URL asli
         String dariUrlAkhir = ambilNamaFileDariUrl(koneksi.getURL());
         if (dariUrlAkhir != null && dariUrlAkhir.contains(".")) return dariUrlAkhir;
 
         String dariUrlAsli = ambilNamaFileDariUrl(urlAsli);
         if (dariUrlAsli != null && dariUrlAsli.contains(".")) return dariUrlAsli;
 
-        // 4. Tidak ada ekstensi sama sekali -> tebak dari Content-Type
         String dasar = dariServer != null ? dariServer
                      : dariUrlAkhir != null ? dariUrlAkhir
                      : dariUrlAsli != null ? dariUrlAsli
@@ -636,7 +626,6 @@ public class AplikasiDownloadFile extends JFrame {
         return dasar + ekstensiDariContentType(koneksi.getContentType());
     }
 
-    /** Ambil nama file dari ujung path URL. Mengembalikan null kalau kosong. */
     private String ambilNamaFileDariUrl(URL url) {
         String path = url.getPath();
         String nama = path.substring(path.lastIndexOf('/') + 1);
@@ -648,10 +637,8 @@ public class AplikasiDownloadFile extends JFrame {
         return bersihkanNama(nama);
     }
 
-    /** Ambil filename dari header Content-Disposition. Mengembalikan null kalau tidak ada. */
     private String ambilNamaDariContentDisposition(String header) {
         if (header == null) return null;
-        // Format modern: filename*=UTF-8''nama%20file.zip
         java.util.regex.Matcher m = java.util.regex.Pattern
                 .compile("filename\\*\\s*=\\s*[^']*''([^;]+)", java.util.regex.Pattern.CASE_INSENSITIVE)
                 .matcher(header);
@@ -660,21 +647,18 @@ public class AplikasiDownloadFile extends JFrame {
                 return bersihkanNama(URLDecoder.decode(m.group(1).trim(), StandardCharsets.UTF_8.name()));
             } catch (Exception ignored) { }
         }
-        // Format biasa: filename="nama file.zip" atau filename=nama.zip
         m = java.util.regex.Pattern
                 .compile("filename\\s*=\\s*\"?([^\";]+)\"?", java.util.regex.Pattern.CASE_INSENSITIVE)
                 .matcher(header);
         return m.find() ? bersihkanNama(m.group(1)) : null;
     }
 
-    /** Buang karakter terlarang di nama file Windows. Mengembalikan null kalau hasilnya kosong. */
     private static String bersihkanNama(String nama) {
         if (nama == null) return null;
         nama = nama.replaceAll("[\\\\/:*?\"<>|]", "_").trim();
         return nama.isEmpty() ? null : nama;
     }
 
-    /** Tebak ekstensi dari Content-Type, misal "application/zip" -> ".zip". */
     private static String ekstensiDariContentType(String contentType) {
         if (contentType == null) return ".bin";
         String ct = contentType.toLowerCase();
@@ -690,11 +674,6 @@ public class AplikasiDownloadFile extends JFrame {
         if (ct.contains("mp4"))        return ".mp4";
         return ".bin";
     }
-
-    /**
-     * Cek apakah file benar-benar ZIP dari ISINYA, bukan dari namanya.
-     * Setiap file ZIP selalu diawali 4 byte: 'P' 'K' 3 4 (tanda tangan / "magic number").
-     */
     private static boolean isFileZip(File file) {
         try (InputStream in = new FileInputStream(file)) {
             byte[] awal = new byte[4];
